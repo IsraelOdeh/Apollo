@@ -8,6 +8,7 @@ import { EegWorkspace } from '@/components/neuroedge/eeg-workspace'
 import { AiScreening } from '@/components/neuroedge/ai-screening'
 import { RecordingsLibrary } from '@/components/neuroedge/recordings-library'
 import { BrainDataRepository } from '@/components/neuroedge/brain-data-repository'
+import { ReportsPage } from '@/components/neuroedge/reports-page'
 import { generateBandSignal } from '@/lib/eeg/synthetic-signal'
 import { fetchRecordings } from '@/lib/services/recordings'
 import type { Recording } from '@/lib/db/types'
@@ -61,7 +62,7 @@ export function NeuroEdgeSection({ path }: { path: SectionPath }) {
     {path === '/recordings' && <RecordingsLibrary />}
     {path === '/repository' && <BrainDataRepository />}
     {path === ('/repository-old' as SectionPath) && <RepositoryPanel recordings={recordings} load={loadRecordings} />}
-    {path === '/reports' && <ReportsPanel recordings={recordings} load={loadRecordings} />}
+    {path === '/reports' && <ReportsPage />}
     {path === '/devices' && <DevicePanel />}
     {path === '/model' && <ModelPanel />}
     {path === '/settings' && <SettingsPanel saved={saved} onSave={() => setSaved(true)} />}
