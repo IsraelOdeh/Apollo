@@ -2,12 +2,15 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Activity, ArrowUpRight, CheckCircle2, Download, FileUp, Filter, Laptop, Play, RotateCcw, Save, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, WifiOff } from 'lucide-react'
+import { Activity, ArrowUpRight, CheckCircle2, Download, FileUp, Filter, Laptop, Play, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, WifiOff } from 'lucide-react'
 import { Panel } from '@/components/layout/panel'
 import { EegWorkspace } from '@/components/neuroedge/eeg-workspace'
 import { AiScreening } from '@/components/neuroedge/ai-screening'
 import { RecordingsLibrary } from '@/components/neuroedge/recordings-library'
 import { BrainDataRepository } from '@/components/neuroedge/brain-data-repository'
+import { ReportsPage } from '@/components/neuroedge/reports-page'
+import { DeviceManager } from '@/components/neuroedge/device-manager'
+import { SettingsPage } from '@/components/neuroedge/settings-page'
 import { generateBandSignal } from '@/lib/eeg/synthetic-signal'
 import { fetchRecordings } from '@/lib/services/recordings'
 import type { Recording } from '@/lib/db/types'
@@ -20,7 +23,7 @@ const nav = {
   '/reports': { title: 'Reports', eyebrow: 'Analysis', intro: 'Separate screening findings from human-confirmed interpretations.' },
   '/devices': { title: 'Device Manager', eyebrow: 'Acquisition', intro: 'Hardware is not connected. Demo streams are clearly labeled.' },
   '/model': { title: 'Model Information', eyebrow: 'Screening model', intro: 'Transparent model metadata and operating constraints.' },
-  '/settings': { title: 'Settings', eyebrow: 'Workstation', intro: 'Persist local display and signal-processing preferences.' },
+  '/settings': { title: 'Settings', eyebrow: 'Workstation', intro: 'Configure workstation preferences, model metadata, and privacy controls.' },
 } as const
 
 type SectionPath = keyof typeof nav
@@ -48,7 +51,6 @@ export function NeuroEdgeSection({ path }: { path: SectionPath }) {
   const meta = nav[path]
   const [recordings, setRecordings] = useState<Recording[]>([])
   const [running, setRunning] = useState(false)
-  const [saved, setSaved] = useState(false)
   const loadRecordings = async () => { try { setRecordings(await fetchRecordings()) } catch { setRecordings([]) } }
   const demoEvents = [{ label: 'Candidate event', time: '00:18.42', confidence: '0.87', status: 'Pending' }, { label: 'Artifact segment', time: '00:41.08', confidence: '—', status: 'Needs review' }, { label: 'Candidate event', time: '01:12.70', confidence: '0.74', status: 'Pending' }]
   const signal = useMemo(() => <Waveform seed={path.length} />, [path])
@@ -61,10 +63,10 @@ export function NeuroEdgeSection({ path }: { path: SectionPath }) {
     {path === '/recordings' && <RecordingsLibrary />}
     {path === '/repository' && <BrainDataRepository />}
     {path === ('/repository-old' as SectionPath) && <RepositoryPanel recordings={recordings} load={loadRecordings} />}
-    {path === '/reports' && <ReportsPanel recordings={recordings} load={loadRecordings} />}
-    {path === '/devices' && <DevicePanel />}
+    {path === '/reports' && <ReportsPage />}
+    {path === '/devices' && <DeviceManager />}
     {path === '/model' && <ModelPanel />}
-    {path === '/settings' && <SettingsPanel saved={saved} onSave={() => setSaved(true)} />}
+    {path === '/settings' && <SettingsPage />}
   </main>
 }
 
@@ -74,5 +76,4 @@ function ReportsPanel({ recordings, load }: { recordings: Recording[]; load: () 
 function DevicePanel() { const [stream, setStream] = useState(false); return <div className="grid gap-5 lg:grid-cols-[1fr_330px]"><Panel title="Acquisition device" eyebrow="Hardware status"><div className="rounded-xl border border-ne-line bg-ne-bg2 p-5"><div className="flex items-start justify-between"><div className="flex items-center gap-3"><div className="rounded-lg bg-ne-elevated p-3"><Laptop className="h-5 w-5 text-ne-fg-2" /></div><div><p className="text-sm text-ne-fg">No device connected</p><p className="mt-1 text-xs text-ne-fg-3">g.tec integration available in a future release</p></div></div><WifiOff className="h-4 w-4 text-ne-fg-3" /></div><div className="mt-5 flex gap-2"><Button variant="quiet">Connect device</Button><Button onClick={() => setStream(!stream)}>{stream ? 'Stop demo stream' : 'Start demo stream'}</Button></div></div></Panel><Panel title="Demo stream" eyebrow="Synthetic signal"><div className="flex items-center gap-2 text-xs text-ne-amber"><Activity className="h-4 w-4" />{stream ? 'Streaming demo data' : 'Stopped'}</div><div className="mt-4 opacity-70">{signalForDevice()}</div></Panel></div> }
 function signalForDevice() { return <Waveform seed={19} /> }
 function ModelPanel() { return <div className="grid gap-5 md:grid-cols-2"><Panel title="NeuroEdge Screening Model" eyebrow="Model card"><div className="grid gap-4 sm:grid-cols-2">{[['Version','v0.4.2'],['Size','48.2 MB'],['Input','256 Hz EEG'],['Updated','2026-10-31']].map(([label,value]) => <div key={label} className="rounded-xl border border-ne-line bg-ne-bg2 p-4"><p className="text-xs text-ne-fg-3">{label}</p><p className="mt-2 font-mono text-sm text-ne-fg">{value}</p></div>)}</div></Panel><Panel title="Supported tasks" eyebrow="Scope"><ul className="space-y-3 text-sm text-ne-fg-2"><li className="flex gap-2"><CheckCircle2 className="h-4 w-4 text-ne-emerald" />IED candidate screening</li><li className="flex gap-2"><CheckCircle2 className="h-4 w-4 text-ne-emerald" />Artifact segmentation</li><li className="flex gap-2"><ShieldCheck className="h-4 w-4 text-ne-cyan" />No autonomous diagnosis</li></ul></Panel></div> }
-function SettingsPanel({ saved, onSave }: { saved: boolean; onSave: () => void }) { return <div className="grid gap-5 lg:grid-cols-[1fr_330px]"><Panel title="Signal processing defaults" eyebrow="Workstation settings"><div className="space-y-4">{[['High-pass filter','1 Hz'],['Low-pass filter','45 Hz'],['Notch filter','60 Hz'],['Candidate threshold','0.70']].map(([label,value]) => <label key={label} className="flex items-center justify-between gap-4 text-sm text-ne-fg-2">{label}<input defaultValue={value} className="w-28 rounded-lg border border-ne-line bg-ne-bg2 px-3 py-2 text-right text-xs text-ne-fg outline-none focus:border-ne-cyan" /></label>)}<Button onClick={onSave}><Save className="h-3.5 w-3.5" />{saved ? 'Saved to Neon' : 'Save settings'}</Button></div></Panel><Panel title="Privacy & storage" eyebrow="Single tenant"><div className="space-y-3 text-sm text-ne-fg-2"><p className="flex gap-2"><ShieldCheck className="h-4 w-4 text-ne-emerald" />Pseudonymous IDs only</p><p className="flex gap-2"><CheckCircle2 className="h-4 w-4 text-ne-emerald" />Original recordings are immutable</p><p className="flex gap-2"><Settings2 className="h-4 w-4 text-ne-cyan" />Offline queue enabled</p></div></Panel></div> }
 function download(name: string, content: string, type: string) { const blob = new Blob([content], { type }); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = name; anchor.click(); URL.revokeObjectURL(url) }
