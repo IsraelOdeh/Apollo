@@ -3,6 +3,12 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/storage/db";
 
+export function useRecording(id: string) {
+  const recording = useLiveQuery(() => db.recordings.get(id), [id], null);
+
+  return recording;
+}
+
 export function useRecordings() {
   const recordings = useLiveQuery(
     () => db.recordings.orderBy("imported_at").reverse().toArray(),

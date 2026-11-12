@@ -12,6 +12,9 @@ const jetBrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "NeuroEdge",
   description: "Offline-first EEG screening and brain health data platform",
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export const viewport = { themeColor: "#000000" };
