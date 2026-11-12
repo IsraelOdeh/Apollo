@@ -155,15 +155,23 @@ function FilterControl({
   );
 }
 
-const readRecording = async (recording) => {
+const readRecording = async (
+  recording: File,
+  channels: [],
+  window: number,
+  start: number,
+) => {
   try {
     const edfFile = await openEdf(blobSource(recording));
+    channels.map((channel) => {
+      console.log("Channel:", channel);
+    });
     const fp1 = getSignal(edfFile.header, "F8-T8");
 
     const [chunk] = await readWindow(edfFile, {
       signalIndices: [fp1.index],
-      startSeconds: 16,
-      durationSeconds: 1,
+      startSeconds: start,
+      durationSeconds: window,
     }); // Read first 60 seconds
 
     if (!chunk?.signals[0]) {
@@ -177,11 +185,19 @@ const readRecording = async (recording) => {
     const max = Math.max(...physicalSignal);
     const peakToPeak = max - min;
 
-    console.log("PP:", peakToPeak);
+    const amplitude = peakToPeak / 2; // Half of the peak-to-peak value
 
+    console.log(
+      "PP:",
+      peakToPeak,
+      "min",
+      min,
+      "max",
+      max,
+      "amplitude",
+      amplitude,
+    );
     console.log("Physical signal loaded:", physicalSignal);
-    const samplingRate = edfFile.header.signals[0].sampleRateHz;
-    console.log("Sampling rate:", samplingRate);
   } catch (error) {
     console.error("Error reading recording:", error);
   }
@@ -260,6 +276,9 @@ export function EegWorkspace() {
   });
   const [recording, setRecording] = useState<Recording | null>(null);
 
+  //tuneers
+  const [signalwindow, setWindow] = useState<number>(60);
+
   const importFile = (nextFile?: File) => {
     if (!nextFile || !/\.edf(\+)?$/i.test(nextFile.name)) return;
     console.log("Importing file:", nextFile.name, nextFile.size);
@@ -325,7 +344,7 @@ export function EegWorkspace() {
       ),
     );
 
-    readRecording(recording.file_blob);
+    readRecording(recording.file_blob, channels, 60, 5);
   }, [recording]);
   return (
     <div className="space-y-5">
@@ -621,14 +640,17 @@ export function EegWorkspace() {
                     <span className="inline-flex items-center gap-2">
                       Window
                     </span>
-                    <input
-                      type="number"
-                      min="0.5"
-                      max="2"
-                      step="0.1"
-                      defaultValue="1"
-                      className="w-full accent-[#42D9F5]"
-                    />
+                    <select
+                      value={window}
+                      onChange={(event) =>
+                        setWindow(Number(event.target.value))
+                      }
+                      className="ml-auto rounded-lg border border-ne-line bg-ne-bg2 px-3 py-2 text-xs text-ne-fg outline-none focus:border-ne-cyan"
+                    >
+                      <option>5</option>
+                      <option>10</option>
+                      <option>15</option>
+                    </select>
                     <span className="inline-flex items-center gap-2">s</span>
                   </div>
 
