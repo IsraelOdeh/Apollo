@@ -1,3 +1,4 @@
+// components/brain/BrainViewer.tsx
 "use client";
 
 import dynamic from "next/dynamic";
@@ -9,6 +10,9 @@ import {
   useState,
   type MutableRefObject,
 } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/lib/storage/db";
+import { mapDbEventsToBrainViewer } from "@/lib/eeg/brain-bridge";
 import styles from "./BrainViewer.module.css";
 import {
   EVENT_LABEL,
@@ -41,14 +45,14 @@ const BrainScene = dynamic(() => import("./BrainScene"), {
 export interface BrainViewerProps {
   /** Channel layout. Defaults to the standard 10-20 set (19 channels). */
   electrodes?: Electrode[];
-  /** Detected events from your pipeline. Omit to use the built-in simulator. */
+  /** Detected events from your pipeline. Omit to use IndexedDB or built-in simulator. */
   events?: DetectedEvent[];
   /** Live per-channel activity, 0..1, keyed by electrode id. */
   channelActivity?: Record<string, number>;
   status?: RecordingStatus;
   /** Epoch ms when the recording began; defaults to mount time. */
   recordingStartedAt?: number;
-  /** Run the demo signal simulator. Defaults to true when no live data is passed. */
+  /** Run the demo signal simulator. Defaults to true when no live or IndexedDB data is present. */
   simulate?: boolean;
   defaultMode?: ViewMode;
   /** Mesh density: low is kinder to phones. */
@@ -87,14 +91,17 @@ function usePrefersReducedMotion() {
 function useSimulatedSignal(
   electrodes: Electrode[],
   enabled: boolean,
-  activityRef: MutableRefObject<Record<string, number>>,
+  activityRef: MutableRefObject<Record<string, number>>
 ) {
   const [events, setEvents] = useState<DetectedEvent[]>([]);
 
   useEffect(() => {
     if (!enabled) return;
     const start = performance.now();
-    const seeds = electrodes.map((_, i) => ({ f: 0.5 + i * 0.07, p: i * 1.3 }));
+    const seeds = electrodes.map((_, i) => ({
+      f: 0.5 + i * 0.07,
+      p: i * 1.3,
+    }));
     let seq = 0;
 
     const tick = setInterval(() => {
@@ -130,7 +137,7 @@ function useSimulatedSignal(
           setEvents((prev) => [ev, ...prev].slice(0, 12));
           schedule();
         },
-        2500 + Math.random() * 3500,
+        2500 + Math.random() * 3500
       );
     };
     schedule();
@@ -151,8 +158,11 @@ const fmtClock = (s: number) => {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(h)}:${p(m)}:${p(sec)}`;
 };
+
 const fmtMs = (s: number) =>
-  `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(
+    Math.floor(s % 60)
+  ).padStart(2, "0")}`;
 
 const sameSelection = (a: Selection, b: Selection) =>
   !!a &&
@@ -183,18 +193,99 @@ export default function BrainViewer({
   const [selection, setSelection] = useState<Selection>(null);
   const reduced = usePrefersReducedMotion();
 
+  // Live query for the latest screened EDF recording and its model events in IndexedDB
+  const dbState = useLiveQuery(async () => {
+    try {
+      const activeId =
+        typeof window !== "undefined"
+          ? localStorage.getItem("ne_active_recording_id")
+          : null;
+      let rec = activeId ? await db.recordings.get(activeId) : undefined;
+      if (!rec) {
+        const all = await db.recordings
+          .orderBy("imported_at")
+          .reverse()
+          .toArray();
+        rec = all[0];
+      }
+      if (!rec) return null;
+
+      const sessions = await db.screening_sessions
+        .where("recording_id")
+        .equals(rec.id)
+        .toArray();
+      const latestSession = sessions[sessions.length - 1];
+      if (!latestSession) {
+        return { recording: rec, brainEvents: [], baseActivity: {} };
+      }
+
+      const rawEvents = await db.detected_events
+        .where("session_id")
+        .equals(latestSession.id)
+        .sortBy("start_time");
+
+      const { brainEvents, baseActivity } = mapDbEventsToBrainViewer(rawEvents);
+      return { recording: rec, brainEvents, baseActivity };
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const hasDbScreening =
+    !!dbState &&
+    eventsProp === undefined &&
+    channelActivity === undefined &&
+    dbState.brainEvents.length > 0;
+
   const simulating =
-    simulate ?? (eventsProp === undefined && channelActivity === undefined);
+    simulate ??
+    (eventsProp === undefined &&
+      channelActivity === undefined &&
+      !hasDbScreening);
+
   const activityRef = useRef<Record<string, number>>({});
+
   useEffect(() => {
-    if (channelActivity) activityRef.current = channelActivity;
+    if (channelActivity) {
+      activityRef.current = channelActivity;
+    }
   }, [channelActivity]);
+
+  // Animate cortical activity around the real EDF event channels when IndexedDB data is active
+  useEffect(() => {
+    if (!hasDbScreening || !dbState) return;
+    const base = dbState.baseActivity;
+    activityRef.current = { ...base };
+
+    const start = performance.now();
+    const seeds = electrodes.map((_, i) => ({
+      f: 0.6 + i * 0.08,
+      p: i * 1.1,
+    }));
+
+    const tick = setInterval(() => {
+      const t = (performance.now() - start) / 1000;
+      const next: Record<string, number> = {};
+      electrodes.forEach((el, i) => {
+        const b = base[el.id] ?? 0.16;
+        const s = seeds[i];
+        const osc = 0.08 * Math.sin(t * s.f + s.p);
+        next[el.id] = Math.min(1, Math.max(0.05, b + osc));
+      });
+      activityRef.current = next;
+    }, 100);
+
+    return () => clearInterval(tick);
+  }, [hasDbScreening, dbState, electrodes]);
+
   const simEvents = useSimulatedSignal(
     electrodes,
     simulating && status === "recording",
-    activityRef,
+    activityRef
   );
-  const events = eventsProp ?? simEvents;
+
+  const events =
+    eventsProp ?? (hasDbScreening ? dbState!.brainEvents : simEvents);
 
   /* recording clock */
   const startedAt = useRef(recordingStartedAt ?? Date.now());
@@ -218,7 +309,7 @@ export default function BrainViewer({
         return value;
       });
     },
-    [onSelectionChange],
+    [onSelectionChange]
   );
 
   const changeMode = (m: ViewMode) => {
@@ -247,12 +338,11 @@ export default function BrainViewer({
       [...electrodes]
         .sort(
           (a, b) =>
-            (activityRef.current[b.id] ?? 0) - (activityRef.current[a.id] ?? 0),
+            (activityRef.current[b.id] ?? 0) - (activityRef.current[a.id] ?? 0)
         )
         .slice(0, 3),
-    // re-sorted whenever the event list changes, which is a good-enough cadence for the readout
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [electrodes, events],
+    [electrodes, events]
   );
 
   return (
@@ -275,8 +365,12 @@ export default function BrainViewer({
 
         <RecordingPill
           status={status}
-          elapsed={elapsed}
-          channels={electrodes.length}
+          elapsed={hasDbScreening ? dbState!.recording.duration : elapsed}
+          channels={
+            hasDbScreening
+              ? dbState!.recording.channel_count
+              : electrodes.length
+          }
         />
 
         <div className={styles.modes} role="group" aria-label="View mode">
@@ -379,8 +473,14 @@ export default function BrainViewer({
           <>
             <div className={styles.headRow}>
               <h2 className={styles.h}>Detected events</h2>
-              {simulating && (
+              {simulating ? (
                 <span className={styles.sim}>Simulated signal</span>
+              ) : (
+                dbState?.recording && (
+                  <span className={styles.sim}>
+                    {dbState.recording.recording_name}
+                  </span>
+                )
               )}
             </div>
             <p className={styles.sub}>
@@ -423,12 +523,14 @@ export default function BrainViewer({
                 })}
               </ul>
             )}
+
             {selectedElectrode && (
               <ElectrodeDetail
                 electrode={selectedElectrode}
                 event={selectedEvent}
               />
             )}
+
             {!selectedElectrode && topChannels.length > 0 && (
               <p className={styles.fine}>
                 Most active now: {topChannels.map((c) => c.label).join(", ")}.
@@ -486,12 +588,14 @@ function ElectrodeDetail({
     electrode.hemisphere === "midline"
       ? "Midline"
       : `${electrode.hemisphere[0].toUpperCase()}${electrode.hemisphere.slice(1)} hemisphere`;
+
   return (
     <div className={styles.detail}>
       <h3 className={styles.detailTitle}>
         {electrode.label}
         <span>{hemi}</span>
       </h3>
+
       {event && (
         <p className={styles.eventLine}>
           {EVENT_LABEL[event.kind]} at{" "}
