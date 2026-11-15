@@ -1,12 +1,15 @@
-'use client';
+// components/layout/app-shell.tsx
+"use client";
 
-import { useEffect, useState, type ReactNode } from 'react';
-import { usePathname } from 'next/navigation';
-import { cn } from '@/lib/utils';
-import { useOnlineStatus } from '@/hooks/use-online-status';
-import { findNavItem } from './nav-items';
-import { Sidebar } from './sidebar';
-import { TopBar } from './top-bar';
+import { useEffect, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { useOnlineStatus } from "@/hooks/use-online-status";
+import { findNavItem } from "./nav-items";
+import { Sidebar } from "./sidebar";
+import { TopBar } from "./top-bar";
+
+const SIDEBAR_STORAGE_KEY = "ne_sidebar_collapsed";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -15,8 +18,21 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
+    const saved = localStorage.getItem(SIDEBAR_STORAGE_KEY);
+    if (saved === "true") setCollapsed(true);
+  }, []);
+
+  useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
+
+  const handleToggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(SIDEBAR_STORAGE_KEY, String(next));
+      return next;
+    });
+  };
 
   const currentItem = findNavItem(pathname);
 
@@ -26,9 +42,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         collapsed={collapsed}
         mobileOpen={mobileOpen}
         online={online}
-        onToggleCollapsed={() => setCollapsed((value) => !value)}
+        onToggleCollapsed={handleToggleCollapsed}
       />
-
       {mobileOpen && (
         <button
           type="button"
@@ -37,11 +52,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
         />
       )}
-
       <div
         className={cn(
-          'flex min-h-screen flex-col transition-[padding] duration-300 ease-out',
-          collapsed ? 'lg:pl-[72px]' : 'lg:pl-[240px]',
+          "flex min-h-screen flex-col transition-[padding] duration-300 ease-out",
+          collapsed ? "lg:pl-[76px]" : "lg:pl-[240px]"
         )}
       >
         <TopBar
@@ -49,7 +63,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           online={online}
           onOpenNavigation={() => setMobileOpen(true)}
         />
-
         {!online && (
           <div
             role="status"
@@ -57,12 +70,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             <span className="h-2 w-2 shrink-0 rounded-full bg-ne-amber" />
             <p>
-              Offline mode. Recordings and screenings keep working on this device, and
-              synchronization resumes automatically when the connection returns.
+              Offline mode active. Recordings and screenings run locally on this
+              workstation.
             </p>
           </div>
         )}
-
         <main className="flex-1 px-4 py-6 md:px-6 lg:px-8">{children}</main>
       </div>
     </div>

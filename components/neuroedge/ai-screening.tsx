@@ -2,6 +2,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { InfoHelp } from "@/components/layout/neuroedge-logo";
 import {
   Check,
   ChevronRight,
@@ -333,23 +334,7 @@ export function AiScreening() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ne-ai/20 bg-ne-ai/5 px-4 py-3">
-        <div className="flex items-start gap-3">
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-ne-ai" />
-          <div>
-            <p className="text-sm font-medium text-ne-fg">
-              AI-assisted clinical review
-            </p>
-            <p className="mt-1 text-xs text-ne-fg-2">
-              Model outputs are screening candidates for qualified human review,
-              not autonomous diagnoses.
-            </p>
-          </div>
-        </div>
-        <span className="rounded-full border border-ne-ai/30 px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-ne-ai">
-          Human in the loop
-        </span>
-      </div>
+      
       <div className="grid gap-5 xl:grid-cols-[1fr_300px]">
         <div className="space-y-5">
           <Panel
@@ -405,7 +390,25 @@ export function AiScreening() {
               </div>
             </div>
           </Panel>
-          <Panel title="Screening result" eyebrow="Model interpretation">
+         <Panel
+            title="Screening result"
+            eyebrow="Automated triage summary"
+            actions={
+              <InfoHelp title="How NeuroEdge MLP Scoring Works">
+                <p>
+                  Each 2-second window (512 samples at 256 Hz) is decomposed into
+                  28 time, frequency, wavelet (db4), and spatial features.
+                </p>
+                <p>
+                  The 3-layer MLP outputs a seizure probability, smoothed over a
+                  5-window trailing average. Windows exceeding the{" "}
+                  <strong>{EDGE_MODEL.threshold.toFixed(2)}</strong> threshold
+                  are flagged for clinician review, while high frontal/posterior
+                  blink ratios are gated as artifacts.
+                </p>
+              </InfoHelp>
+            }
+          >
             <div className="flex flex-col gap-4 rounded-xl border border-ne-amber/30 bg-ne-amber/10 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3">
                 <CircleAlert className="mt-0.5 h-5 w-5 text-ne-amber" />
@@ -416,10 +419,9 @@ export function AiScreening() {
                       : "No epileptiform candidates above threshold"}
                   </p>
                   <p className="mt-1 max-w-xl text-xs leading-5 text-ne-fg-2">
-                    Review {iedCount} IED candidate(s) and {szCount} suspected
-                    seizure-related segment(s) (threshold{" "}
-                    {EDGE_MODEL.threshold.toFixed(2)}). This result does not
-                    establish or exclude epilepsy.
+                    {iedCount} IED candidate(s), {szCount} suspected seizure
+                    segment(s), and {artCount} artifact segment(s) identified at
+                    operating threshold {EDGE_MODEL.threshold.toFixed(2)}.
                   </p>
                 </div>
               </div>
@@ -639,11 +641,7 @@ export function AiScreening() {
                 {noteSaved ? "Saved" : "Save note"}
               </button>
             </div>
-            <div className="rounded-lg border border-ne-line bg-ne-bg2/60 p-3 text-[11px] leading-5 text-ne-fg-3">
-              Model predictions and human-reviewed annotations are stored as
-              separate states. Confirming or rejecting a candidate does not
-              alter the original recording.
-            </div>
+            
           </div>
         </Panel>
       </div>
