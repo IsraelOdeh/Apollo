@@ -40,3 +40,6 @@ public/swe-worker*
 *.edf
 *.edf+
 *.seizures
+
+
+*/edf

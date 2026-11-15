@@ -80,13 +80,13 @@ function WorkspaceButton({
 }
 
 function Waveform({
-  seed,
+  physicalSignal,
   color,
   height = 54,
   values,
   gain = 1,
 }: {
-  seed: number;
+  physicalSignal: ArrayLike<number>;
   color: string;
   height?: number;
   values?: number[];
@@ -123,7 +123,7 @@ function Waveform({
       viewBox="0 0 100 100"
       preserveAspectRatio="none"
       style={{ height }}
-      className="w-full overflow-visible"
+      className="w-full overflow-hidden"
       aria-hidden="true"
     >
       <path
@@ -315,8 +315,10 @@ export function EegWorkspace() {
     importFile(event.dataTransfer.files[0]);
   };
 
+
   const onFileChange = (event: ChangeEvent<HTMLInputElement>) =>
     importFile(event.target.files?.[0]);
+
 
   const visibleChannels = useMemo(
     () => channels.filter((channel) => visible[channel]),
@@ -358,6 +360,7 @@ export function EegWorkspace() {
     loadInitialRecording();
   }, []);
 
+  // Load recording from URL query parameter or latest imported recording in IndexedDB
   useEffect(() => {
     if (!recording) return;
     setFile({
@@ -754,7 +757,7 @@ export function EegWorkspace() {
                     <select
                       value={signalwindow}
                       onChange={(event) =>
-                        setWindow(Number(event.target.value))
+                        setDuration(Number(event.target.value))
                       }
                       className="ml-auto rounded-lg border border-ne-line bg-ne-bg2 px-3 py-2 text-xs text-ne-fg outline-none focus:border-ne-cyan"
                     >
@@ -786,6 +789,9 @@ export function EegWorkspace() {
                     value={startSec}
                     onChange={(e) => setStartSec(Number(e.target.value))}
                     className="w-full accent-[#42D9F5]"
+                    onChange={(event) =>
+                      setStart(Number(event.target.value) * recording?.duration)
+                    }
                   />
                   <span className="font-mono">
                     {formatMMSS(recording.duration)}
@@ -826,9 +832,12 @@ export function EegWorkspace() {
                   <button
                     key={index}
                     type="button"
-                    aria-pressed={visible[channel]}
+                    aria-pressed={visible[channel[1]]}
                     onClick={() =>
-                      setVisible({ ...visible, [channel]: !visible[channel] })
+                      setVisible({
+                        ...visible,
+                        [channel[1]]: !visible[channel[1]],
+                      })
                     }
                     className={`flex items-center gap-2 rounded-md px-2 py-2 text-left text-xs transition-colors ${
                       visible[channel]
