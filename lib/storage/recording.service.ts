@@ -1,4 +1,5 @@
 import { db, type Recording } from "./db";
+import { useLiveQuery } from "dexie-react-hooks";
 
 export async function saveRecording(recording: Recording) {
   await db.recordings.add(recording);
@@ -10,7 +11,7 @@ export async function getRecording(id: string) {
   return db.recordings.get(id);
 }
 
-export async function getAllRecordings() {
+export function getAllRecordings() {
   return db.recordings.orderBy("imported_at").reverse().toArray();
 }
 
@@ -46,3 +47,19 @@ export async function deleteRecording(id: string) {
     },
   );
 }
+
+// export function useRecording(id: string) {
+//   const recording = useLiveQuery(() => db.recordings.get(id), [id], null);
+
+//   return recording;
+// }
+
+// export function getAllRecordings() {
+//   const recordings = useLiveQuery(
+//     () => db.recordings.orderBy("imported_at").reverse().toArray(),
+//     [],
+//     [],
+//   );
+
+//   return recordings;
+// }

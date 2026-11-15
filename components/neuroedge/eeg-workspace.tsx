@@ -405,9 +405,6 @@ export function EegWorkspace() {
     readRecording(recording.file_blob, channels);
   }, [duration, start]);
 
-  // console.log("visib:", visible);
-  // console.log("visib channels:", visibleChannels);
-
   return (
     <div className="space-y-5">
       <header className="flex flex-wrap items-end justify-between gap-4">
@@ -439,144 +436,141 @@ export function EegWorkspace() {
             <Laptop className="h-3.5 w-3.5" />
             Device Connection
           </WorkspaceButton>
-          <WorkspaceButton onClick={() => setAnalysis(!analysis)}>
+          {/* <WorkspaceButton onClick={() => setAnalysis(!analysis)}>
             <Activity className="h-3.5 w-3.5" />
             {analysis ? "Analysis Running" : "Start Analysis"}
-          </WorkspaceButton>
+          </WorkspaceButton> */}
         </div>
       </header>
 
-      <Panel title="Recording import" eyebrow="EDF / EDF+ · local review">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_2.2fr]">
-          {(recording && (
-            <>
-              <div className="rounded-xl border border-ne-line bg-ne-bg2/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="rounded-lg bg-ne-elevated p-2.5 text-ne-cyan">
-                      <Download className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate font-mono text-sm text-ne-fg">
-                        {file.name}
-                      </p>
-                      <p className="mt-1 text-xs text-ne-fg-3">
-                        {file.size} · {file.status}
-                      </p>
-                    </div>
+      {(recording && (
+        <Panel title="Recording import" eyebrow="EDF / EDF+ · local review">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_2.2fr]">
+            <div className="rounded-xl border border-ne-line bg-ne-bg2/60 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="rounded-lg bg-ne-elevated p-2.5 text-ne-cyan">
+                    <Download className="h-4 w-4" />
                   </div>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-ne-emerald/20 bg-ne-emerald/10 px-2 py-1 text-[10px] text-ne-emerald">
-                    <Circle className="h-2 w-2 fill-current" />
-                    Ready
-                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate font-mono text-sm text-ne-fg">
+                      {file.name}
+                    </p>
+                    <p className="mt-1 text-xs text-ne-fg-3">
+                      {file.size} · {file.status}
+                    </p>
+                  </div>
                 </div>
-                <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-3 border-t border-ne-line pt-3 text-xs">
-                  <div>
-                    <p className="text-ne-fg-3">Channels</p>
-                    <p className="mt-1 font-mono text-ne-fg">19</p>
-                  </div>
-                  <div>
-                    <p className="text-ne-fg-3">Sampling frequency</p>
-                    <p className="mt-1 font-mono text-ne-fg">256 Hz</p>
-                  </div>
-                  <div>
-                    <p className="text-ne-fg-3">Duration</p>
-                    <p className="mt-1 font-mono text-ne-fg">05:14:00</p>
-                  </div>
-                  <div>
-                    <p className="text-ne-fg-3">Recording date</p>
-                    <p className="mt-1 font-mono text-ne-fg">2026-11-08</p>
-                  </div>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-ne-emerald/20 bg-ne-emerald/10 px-2 py-1 text-[10px] text-ne-emerald">
+                  <Circle className="h-2 w-2 fill-current" />
+                  Ready
+                </span>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-3 border-t border-ne-line pt-3 text-xs">
+                <div>
+                  <p className="text-ne-fg-3">Channels</p>
+                  <p className="mt-1 font-mono text-ne-fg">19</p>
+                </div>
+                <div>
+                  <p className="text-ne-fg-3">Sampling frequency</p>
+                  <p className="mt-1 font-mono text-ne-fg">256 Hz</p>
+                </div>
+                <div>
+                  <p className="text-ne-fg-3">Duration</p>
+                  <p className="mt-1 font-mono text-ne-fg">05:14:00</p>
+                </div>
+                <div>
+                  <p className="text-ne-fg-3">Recording date</p>
+                  <p className="mt-1 font-mono text-ne-fg">2026-11-08</p>
                 </div>
               </div>
+            </div>
 
-              <Panel
-                title="Signal controls"
-                eyebrow="Display processing"
-                bodyClassName="grid grid-cols-2 gap-5"
-              >
-                <div className="space-y-4">
-                  <FilterControl
-                    label="High-pass filter"
-                    value={filterValues.high}
-                    options={["0.5 Hz", "1 Hz", "2 Hz"]}
-                    enabled={filters.high}
-                    onToggle={() =>
-                      setFilters({ ...filters, high: !filters.high })
-                    }
-                    onChange={(value) =>
-                      setFilterValues({ ...filterValues, high: value })
-                    }
-                  />
-                  <FilterControl
-                    label="Low-pass filter"
-                    value={filterValues.low}
-                    options={["30 Hz", "45 Hz", "70 Hz"]}
-                    enabled={filters.low}
-                    onToggle={() =>
-                      setFilters({ ...filters, low: !filters.low })
-                    }
-                    onChange={(value) =>
-                      setFilterValues({ ...filterValues, low: value })
-                    }
-                  />
-                  <FilterControl
-                    label="Notch filter"
-                    value={filterValues.notch}
-                    options={["50 Hz", "60 Hz"]}
-                    enabled={filters.notch}
-                    onToggle={() =>
-                      setFilters({ ...filters, notch: !filters.notch })
-                    }
-                    onChange={(value) =>
-                      setFilterValues({ ...filterValues, notch: value })
-                    }
+            <Panel
+              title="Signal controls"
+              eyebrow="Display processing"
+              bodyClassName="grid grid-cols-2 gap-5"
+            >
+              <div className="space-y-4">
+                <FilterControl
+                  label="High-pass filter"
+                  value={filterValues.high}
+                  options={["0.5 Hz", "1 Hz", "2 Hz"]}
+                  enabled={filters.high}
+                  onToggle={() =>
+                    setFilters({ ...filters, high: !filters.high })
+                  }
+                  onChange={(value) =>
+                    setFilterValues({ ...filterValues, high: value })
+                  }
+                />
+                <FilterControl
+                  label="Low-pass filter"
+                  value={filterValues.low}
+                  options={["30 Hz", "45 Hz", "70 Hz"]}
+                  enabled={filters.low}
+                  onToggle={() => setFilters({ ...filters, low: !filters.low })}
+                  onChange={(value) =>
+                    setFilterValues({ ...filterValues, low: value })
+                  }
+                />
+                <FilterControl
+                  label="Notch filter"
+                  value={filterValues.notch}
+                  options={["50 Hz", "60 Hz"]}
+                  enabled={filters.notch}
+                  onToggle={() =>
+                    setFilters({ ...filters, notch: !filters.notch })
+                  }
+                  onChange={(value) =>
+                    setFilterValues({ ...filterValues, notch: value })
+                  }
+                />
+              </div>
+              <div>
+                <div className="border-t border-ne-line">
+                  <div className="mb-2 flex items-center justify-between text-xs text-ne-fg-2">
+                    <span className="inline-flex items-center gap-2">
+                      <Gauge className="h-3.5 w-3.5 text-ne-cyan" />
+                      Amplitude gain
+                    </span>
+                    <span className="font-mono text-ne-fg">1.0×</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="2"
+                    step="0.1"
+                    defaultValue="1"
+                    className="w-full accent-[#42D9F5]"
                   />
                 </div>
                 <div>
-                  <div className="border-t border-ne-line">
-                    <div className="mb-2 flex items-center justify-between text-xs text-ne-fg-2">
-                      <span className="inline-flex items-center gap-2">
-                        <Gauge className="h-3.5 w-3.5 text-ne-cyan" />
-                        Amplitude gain
-                      </span>
-                      <span className="font-mono text-ne-fg">1.0×</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0.5"
-                      max="2"
-                      step="0.1"
-                      defaultValue="1"
-                      className="w-full accent-[#42D9F5]"
-                    />
+                  <div className="mb-2 flex items-center justify-between text-xs text-ne-fg-2">
+                    <span>Time window</span>
+                    <span className="font-mono text-ne-fg">20 sec</span>
                   </div>
-                  <div>
-                    <div className="mb-2 flex items-center justify-between text-xs text-ne-fg-2">
-                      <span>Time window</span>
-                      <span className="font-mono text-ne-fg">20 sec</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="5"
-                      max="60"
-                      defaultValue="20"
-                      className="w-full accent-[#42D9F5]"
-                    />
-                  </div>
-                  <label className="flex items-center justify-between gap-3 text-xs text-ne-fg-2">
-                    <span className="inline-flex items-center gap-2">
-                      <Filter className="h-3.5 w-3.5 text-ne-amber" />
-                      Highlight artifacts
-                    </span>
-                    <input
-                      type="checkbox"
-                      defaultChecked
-                      className="h-4 w-4 accent-[#F6BD60]"
-                    />
-                  </label>
+                  <input
+                    type="range"
+                    min="5"
+                    max="60"
+                    defaultValue="20"
+                    className="w-full accent-[#42D9F5]"
+                  />
                 </div>
-                {/* <div className="mt-5 rounded-xl border border-ne-cyan/20 bg-ne-cyan/5 p-3">
+                <label className="flex items-center justify-between gap-3 text-xs text-ne-fg-2">
+                  <span className="inline-flex items-center gap-2">
+                    <Filter className="h-3.5 w-3.5 text-ne-amber" />
+                    Highlight artifacts
+                  </span>
+                  <input
+                    type="checkbox"
+                    defaultChecked
+                    className="h-4 w-4 accent-[#F6BD60]"
+                  />
+                </label>
+              </div>
+              {/* <div className="mt-5 rounded-xl border border-ne-cyan/20 bg-ne-cyan/5 p-3">
                   <p className="flex items-center gap-2 text-xs font-medium text-ne-cyan">
                     <Settings2 className="h-3.5 w-3.5" />
                     Non-destructive view
@@ -595,16 +589,25 @@ export function EegWorkspace() {
                     Reset display
                   </WorkspaceButton>
                 </div> */}
-              </Panel>
-            </>
-          )) || (
-            <div className="flex min-h-[132px] flex-col items-center justify-center rounded-xl border border-dashed px-5 text-center transition-colors">
-              <UploadCloud className="mb-2 h-6 w-6 text-ne-cyan" />
-              <p className="text-sm text-ne-fg-3">No recording selected</p>
-            </div>
-          )}
-        </div>
-      </Panel>
+            </Panel>
+          </div>
+        </Panel>
+      )) || (
+        <Panel
+          title="Import a recording"
+          eyebrow="EDF / EDF+ · Workspace"
+          className="w-[64%] justify-self-center"
+        >
+          <div className="flex min-h-[132px] flex-col items-center justify-center rounded-xl border border-dashed px-5 text-center transition-colors">
+            <p className="text-md text-ne-fg-3">No recording selected</p>
+            <UploadCloud className="mb-2 h-6 w-6 text-ne-cyan" />
+            <p className="text-sm text-ne-fg-3">
+              Import an EDF file to get started, or chose one from Recordings
+            </p>
+          </div>
+        </Panel>
+      )}
+
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_308px]">
         <div className="min-w-0 space-y-5">
           {recording && (
@@ -615,7 +618,7 @@ export function EegWorkspace() {
                 <div className="flex items-center gap-1">
                   <WorkspaceButton
                     quiet
-                    onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
+                    onClick={() => setZoom(Math.max(1, zoom - 0.25))}
                   >
                     <ZoomOut className="h-3.5 w-3.5" />
                   </WorkspaceButton>
@@ -642,10 +645,10 @@ export function EegWorkspace() {
               </div>
               <div className="overflow-hidden rounded-xl border border-ne-line bg-[#0a1118]">
                 <div
-                  className="min-w-[720px] p-3 max-h-[50vh] overflow-y-auto relative"
-                  style={{ width: `${100 * zoom}%` }}
+                  className="min-w-[720px] p-3 pt-0 max-h-[50vh] overflow-y-auto scrollbar-none relative "
+                  style={{ width: `${100 * zoom}%`, scrollbarWidth: "none" }}
                 >
-                  <div className="grid grid-cols-[50px_1fr] gap-3 sticky top stretch">
+                  <div className="grid grid-cols-[50px_1fr] gap-3 sticky top-0 stretch">
                     <div></div>
                     <div className="mb-2 flex items-center justify-between text-xs text-ne-fg-2">
                       {Array.from(linspace(start, start + duration, 5)).map(
@@ -653,7 +656,7 @@ export function EegWorkspace() {
                           return (
                             <div>
                               <span key={index}>{formatDuration(time)}</span>
-                              <div className="h-full w-px bg-ne-amber/80" />
+                              <div className="h-[100vh] absolute w-px bg-[#fcfcfccc]" />
                             </div>
                           );
                         },
@@ -690,13 +693,6 @@ export function EegWorkspace() {
                     )
                     // )
                   }
-                  <div className="ml-[55px] mt-2 flex justify-between border-t border-ne-line pt-2 font-mono text-[9px] text-ne-fg-3">
-                    <span>00:36</span>
-                    <span>00:37</span>
-                    <span>00:38</span>
-                    <span>00:39</span>
-                    <span>00:40</span>
-                  </div>
                 </div>
               </div>
               <div>
