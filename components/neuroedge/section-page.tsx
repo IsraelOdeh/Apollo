@@ -28,48 +28,46 @@ import { SettingsPage } from "@/components/neuroedge/settings-page";
 import { generateBandSignal } from "@/lib/eeg/synthetic-signal";
 import { fetchRecordings } from "@/lib/services/recordings";
 import type { Recording } from "@/lib/db/types";
-
 const nav = {
   "/workspace": {
     title: "EEG Workspace",
-    eyebrow: "Signal review",
-    intro: "Inspect an original recording without modifying the source file.",
+    eyebrow: "Waveform analysis",
+    intro: "Multichannel EDF signal inspection and filtering.",
   },
   "/screening": {
     title: "AI Screening",
-    eyebrow: "Candidate review",
-    intro: "Model candidates are review aids, not diagnoses.",
+    eyebrow: "Automated triage",
+    intro: "Event detection and clinician annotation.",
   },
   "/recordings": {
     title: "Recordings",
-    eyebrow: "Library",
-    intro: "Pseudonymous sessions available on this workstation.",
+    eyebrow: "Session library",
+    intro: "Imported and screened EEG recordings.",
   },
   "/repository": {
     title: "Brain Data",
-    eyebrow: "Repository",
-    intro: "Validated metadata and event records for export.",
+    eyebrow: "Telemetry repository",
+    intro: "Standardized metadata and event export.",
   },
   "/reports": {
     title: "Reports",
-    eyebrow: "Analysis",
-    intro: "Separate screening findings from human-confirmed interpretations.",
+    eyebrow: "Clinical analytics",
+    intro: "Session metrics, event distributions, and CSV/PDF export.",
   },
   "/devices": {
     title: "Device Manager",
-    eyebrow: "Acquisition",
-    intro: "Hardware is not connected. Demo streams are clearly labeled.",
+    eyebrow: "Hardware acquisition",
+    intro: "EEG headset connection and channel configuration.",
   },
   "/model": {
     title: "Model Information",
-    eyebrow: "Screening model",
-    intro: "Transparent model metadata and operating constraints.",
+    eyebrow: "Classifier architecture",
+    intro: "NeuroEdge MLP (mlp-v1) specifications and feature pipeline.",
   },
   "/settings": {
     title: "Settings",
-    eyebrow: "Workstation",
-    intro:
-      "Configure workstation preferences, model metadata, and privacy controls.",
+    eyebrow: "System preferences",
+    intro: "Theme, signal processing defaults, and local storage.",
   },
 } as const;
 
@@ -217,7 +215,7 @@ export function NeuroEdgeSection({ path }: { path: SectionPath }) {
 
   return (
     <main className="space-y-6 pb-10">
-      {path !== "/workspace" &&
+     {path !== "/workspace" &&
         path !== "/screening" &&
         path !== "/recordings" &&
         path !== "/repository" && (
@@ -229,17 +227,9 @@ export function NeuroEdgeSection({ path }: { path: SectionPath }) {
               <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ne-fg">
                 {meta.title}
               </h1>
-              <p className="mt-2 max-w-2xl text-sm text-ne-fg-2">
+              <p className="mt-1 max-w-2xl text-sm text-ne-fg-2">
                 {meta.intro}
               </p>
-            </div>
-            <div className="flex gap-2">
-              <span className="rounded-full border border-ne-line bg-ne-card px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-ne-fg-2">
-                Demo data labeled
-              </span>
-              <span className="rounded-full border border-ne-amber/30 bg-ne-amber/10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-ne-amber">
-                Offline ready
-              </span>
             </div>
           </header>
         )}
