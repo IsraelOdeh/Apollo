@@ -1,5 +1,5 @@
+// components/neuroedge/eeg-workspace.tsx
 "use client";
-
 import {
   useEffect,
   useMemo,
@@ -8,6 +8,7 @@ import {
   type ChangeEvent,
   type DragEvent,
 } from "react";
+import { useRouter } from "next/navigation";
 import {
   Activity,
   Check,
@@ -19,44 +20,36 @@ import {
   Filter,
   Gauge,
   Laptop,
-  Pause,
   Play,
-  RotateCcw,
-  Settings2,
-  SlidersHorizontal,
-  Square,
   UploadCloud,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
 import { Panel } from "@/components/layout/panel";
+import { generateBandSignal } from "@/lib/eeg/synthetic-signal";
+import { openEdf, blobSource } from "edfcore";
+import { db, type Recording, type DetectedEvent } from "@/lib/storage/db";
 import {
-  openEdf,
-  blobSource,
-  getSignal,
-  readWindow,
-  toPhysical,
-} from "edfcore";
-import { db } from "@/lib/storage/db";
-import { useRecording } from "@/hooks/use-recording";
-import { Recording } from "@/lib/db/types";
-import { add } from "dexie";
-import { Slider } from "@radix-ui/react-slider";
-import { read } from "node:fs";
-import linspace from "@stdlib/array/linspace";
+  getEdfTotalDurationSeconds,
+  readDisplaySignals,
+  runEdgeScreeningOnRecording,
+} from "@/lib/eeg/edge-screening";
 
 const signalColors = ["#42D9F5", "#36E0A1", "#9D85FF", "#F6BD60"];
 
-function formatDuration(seconds: number) {
-  const totalMilliseconds = Math.max(0, Math.round(seconds * 1000));
-  const minutes = Math.floor(totalMilliseconds / 60000);
-  const remainingMilliseconds = totalMilliseconds % 60000;
-  const remainingSeconds = Math.floor(remainingMilliseconds / 1000);
-  const milliseconds = remainingMilliseconds % 1000;
+function formatHMS(totalSeconds: number): string {
+  const sec = Math.max(0, Math.floor(totalSeconds || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return [h, m, s].map((v) => String(v).padStart(2, "0")).join(":");
+}
 
-  return [minutes, remainingSeconds, milliseconds]
-    .map((part, index) => String(part).padStart(2, "0"))
-    .join(":");
+function formatMMSS(totalSeconds: number): string {
+  const sec = Math.max(0, Math.floor(totalSeconds || 0));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 function WorkspaceButton({
@@ -75,7 +68,11 @@ function WorkspaceButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${quiet ? "border-ne-line bg-transparent text-ne-fg-2 hover:border-ne-cyan/40 hover:text-ne-fg" : "border-ne-emerald/30 bg-ne-emerald/10 text-ne-emerald hover:bg-ne-emerald/20"}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+        quiet
+          ? "border-ne-line bg-transparent text-ne-fg-2 hover:border-ne-cyan/40 hover:text-ne-fg"
+          : "border-ne-emerald/30 bg-ne-emerald/10 text-ne-emerald hover:bg-ne-emerald/20"
+      }`}
     >
       {children}
     </button>
@@ -86,19 +83,41 @@ function Waveform({
   physicalSignal,
   color,
   height = 54,
+  values,
+  gain = 1,
 }: {
   physicalSignal: ArrayLike<number>;
   color: string;
   height?: number;
+  values?: number[];
+  gain?: number;
 }) {
-  const samples = Array.from(physicalSignal).filter(Number.isFinite);
-  const denominator = Math.max(samples.length - 1, 1);
-  const path = samples
+  const points = useMemo(() => {
+    if (values && values.length > 1) {
+      let maxAbs = 1e-6;
+      for (let i = 0; i < values.length; i++) {
+        const a = Math.abs(values[i]);
+        if (a > maxAbs) maxAbs = a;
+      }
+      return values.map((v) => (v / maxAbs) * gain);
+    }
+    return generateBandSignal("alpha", {
+      points: 260,
+      seed,
+      shift: seed / 8,
+    }).map((v) => v * gain);
+  }, [values, seed, gain]);
+
+  const path = points
     .map(
       (value, index) =>
-        `${index === 0 ? "M" : "L"} ${(index / denominator) * 100} ${50 - value * 0.25}`,
+        `${index === 0 ? "M" : "L"} ${(index / (points.length - 1)) * 100} ${Math.max(
+          2,
+          Math.min(98, 50 - value * 26),
+        )}`,
     )
     .join(" ");
+
   return (
     <svg
       viewBox="0 0 100 100"
@@ -146,7 +165,11 @@ function FilterControl({
         aria-label={`${enabled ? "Disable" : "Enable"} ${label}`}
         aria-pressed={enabled}
         onClick={onToggle}
-        className={`h-5 w-5 rounded border ${enabled ? "border-ne-emerald bg-ne-emerald text-ne-bg" : "border-ne-line bg-ne-bg2 text-transparent"}`}
+        className={`h-5 w-5 rounded border ${
+          enabled
+            ? "border-ne-emerald bg-ne-emerald text-ne-bg"
+            : "border-ne-line bg-ne-bg2 text-transparent"
+        }`}
       >
         <Check className="h-3 w-3" />
       </button>
@@ -165,65 +188,22 @@ function FilterControl({
   );
 }
 
-async function addRecording(nextFile?: File) {
-  if (!nextFile || !/\.edf(\+)?$/i.test(nextFile.name)) return;
-
-  const id = crypto.randomUUID();
-
-  console.log("Adding test recording with ID:", id);
-
-  try {
-    const edfFile = await openEdf(blobSource(nextFile));
-
-    const samplingRate = edfFile.header.signals[0].sampleRateHz;
-    const channelCount = edfFile.header.signals.length;
-    const duration = edfFile.header.signals[0].sampleCount / samplingRate;
-    const recordingDate = edfFile.header.startTime.resolvedDate;
-    const channels = edfFile.header.signals.map((signal) => signal.label);
-
-    console.log("Sampling rate:", samplingRate);
-
-    const recording = {
-      id,
-      recording_name: nextFile.name,
-      file_blob: new Blob([nextFile], {
-        type: "application/octet-stream",
-      }),
-      file_format: "EDF" as const,
-      file_size: nextFile.size,
-      sampling_rate: samplingRate,
-      channel_count: channelCount,
-      channels: channels,
-      duration: duration,
-      recording_date: recordingDate,
-      imported_at: new Date(),
-      source: "upload" as const,
-      quality_status: "unknown" as const,
-      screening_status: "imported" as const,
-    };
-
-    await db.recordings.add(recording);
-
-    console.log("Recording added:", recording);
-
-    // Reload page with query
-    const url = new URL(window.location.href);
-    url.searchParams.set("recording", id);
-    window.history.replaceState({}, "", url.toString());
-  } catch (error) {
-    console.error("Error reading recording:", error);
-  }
-}
-
 export function EegWorkspace() {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState({});
+  const [file, setFile] = useState<{
+    name?: string;
+    size?: string;
+    status?: string;
+  }>({});
   const [dragging, setDragging] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [analysis, setAnalysis] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [detectedEvents, setDetectedEvents] = useState<DetectedEvent[]>([]);
   const [channels, setChannels] = useState<string[]>([]);
   const [visible, setVisible] = useState<Record<string, boolean>>({});
-  const [range, setRange] = useState(38);
+  const [gain, setGain] = useState(1.0);
   const [zoom, setZoom] = useState(1);
   const [montage, setMontage] = useState("Referential");
   const [filters, setFilters] = useState({
@@ -234,36 +214,112 @@ export function EegWorkspace() {
   const [filterValues, setFilterValues] = useState({
     high: "1 Hz",
     low: "45 Hz",
-    notch: "60 Hz",
+    notch: "50 Hz",
   });
   const [recording, setRecording] = useState<Recording | null>(null);
-  const [signalScreen, setSignalScreen] = useState<
-    Record<
-      string,
-      {
-        channelId: number;
-        channel: string;
-        signal: Float64Array<ArrayBufferLike>;
-        amplitude: number;
-      }
-    >
-  >({});
-  //tuneers
-  const [duration, setDuration] = useState<number>(60);
-  const [start, setStart] = useState<number>(0);
+  const [startSec, setStartSec] = useState<number>(0);
+  const [signalwindow, setWindow] = useState<number>(10);
+  const [channelTraces, setChannelTraces] = useState<Record<string, number[]>>(
+    {},
+  );
 
-  const importFile = (nextFile?: File) => {
+  async function handleRunScreening(targetRec: Recording) {
+    setAnalysis(true);
+    setAnalysisProgress(5);
+    try {
+      const { events } = await runEdgeScreeningOnRecording(targetRec, (pct) =>
+        setAnalysisProgress(pct),
+      );
+      setDetectedEvents(events);
+      const updated = await db.recordings.get(targetRec.id);
+      if (updated) setRecording(updated);
+      setFile((prev) => ({ ...prev, status: "Screened" }));
+    } catch (error) {
+      console.error("Error running model screening:", error);
+    } finally {
+      setAnalysis(false);
+    }
+  }
+
+  async function importFile(nextFile?: File) {
     if (!nextFile || !/\.edf(\+)?$/i.test(nextFile.name)) return;
-    console.log("Importing file:", nextFile.name, nextFile.size);
+    const id = crypto.randomUUID();
+    try {
+      const edfFile = await openEdf(blobSource(nextFile));
+      const samplingRate = edfFile.header.signals[0]?.sampleRateHz ?? 256;
+      const channelCount = edfFile.header.signals.length;
+      const duration = getEdfTotalDurationSeconds(edfFile, nextFile.size);
+      const recordingDateValue = edfFile.header.startTime?.resolvedDate;
+      const calendarDate =
+        recordingDateValue &&
+        typeof recordingDateValue === "object" &&
+        "year" in recordingDateValue &&
+        "month" in recordingDateValue &&
+        "day" in recordingDateValue
+          ? (recordingDateValue as unknown as Record<
+              string,
+              number | string | undefined
+            >)
+          : null;
+      const recordingDate: Date =
+        recordingDateValue instanceof Date
+          ? recordingDateValue
+          : calendarDate
+            ? new Date(
+                Number(calendarDate.year),
+                Number(calendarDate.month) - 1,
+                Number(calendarDate.day),
+                Number(calendarDate.hour ?? 0),
+                Number(calendarDate.minute ?? 0),
+                Number(calendarDate.second ?? 0),
+                Number(calendarDate.millisecond ?? 0),
+              )
+            : new Date();
+      const chLabels = edfFile.header.signals.map(
+        (signal: any) => signal.label,
+      );
 
-    addRecording(nextFile);
+      const newRecording: Recording = {
+        id,
+        recording_name: nextFile.name,
+        file_blob: new Blob([nextFile], {
+          type: "application/octet-stream",
+        }),
+        file_format: "EDF",
+        file_size: nextFile.size,
+        sampling_rate: samplingRate,
+        channel_count: channelCount,
+        channels: chLabels,
+        duration,
+        recording_date: recordingDate,
+        imported_at: new Date(),
+        source: "upload",
+        quality_status: "unknown",
+        screening_status: "imported",
+      };
 
-    setFile({
-      name: nextFile.name,
-      size: `${(nextFile.size / 1024 / 1024).toFixed(1)} MB`,
-      status: "Imported",
-    });
-  };
+      await db.recordings.add(newRecording);
+      localStorage.setItem("ne_active_recording_id", id);
+
+      const url = new URL(window.location.href);
+      url.searchParams.set("recording", id);
+      window.history.replaceState({}, "", url.toString());
+
+      setRecording(newRecording);
+      setStartSec(0);
+      setFile({
+        name: nextFile.name,
+        size: `${(nextFile.size / 1024 / 1024).toFixed(1)} MB`,
+        status: "Screening...",
+      });
+
+      // Automatically run edge_model.json screening upon import
+      await handleRunScreening(newRecording);
+    } catch (error) {
+      console.error("Error importing EDF recording:", error);
+    }
+  }
+
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDragging(false);
@@ -274,131 +330,68 @@ export function EegWorkspace() {
     importFile(event.target.files?.[0]);
 
   const visibleChannels = useMemo(
-    () =>
-      Object.values(signalScreen).filter(
-        (channel) => visible[channel.channelId],
-      ),
-    [signalScreen, visible],
+    () => channels.filter((channel) => visible[channel]),
+    [channels, visible],
   );
 
-  const readRecording = async (recording: File, channels: []) => {
-    try {
-      const edfFile = await openEdf(blobSource(recording));
-
-      const signalEntries = await Promise.all(
-        channels.map(async ([channelName, channelIndex]: [string, number]) => {
-          // console.log("Channel:", channel);
-          const fp1 = getSignal(edfFile.header, channelIndex);
-
-          const [chunk] = await readWindow(edfFile, {
-            signalIndices: [fp1.index],
-            startSeconds: start,
-            durationSeconds: duration,
-          }); // Read first 60 seconds
-
-          if (!chunk?.signals[0]) {
-            console.error("No data chunk returned from readWindow.");
-            return;
-          }
-
-          const physicalSignal = toPhysical(fp1, chunk.signals[0].digital);
-
-          const min = Math.min(...physicalSignal);
-          const max = Math.max(...physicalSignal);
-          const peakToPeak = max - min;
-
-          const amplitude = peakToPeak / 2; // Half of the peak-to-peak value
-
-          // console.log(
-          //   "PP:",
-          //   peakToPeak,
-          //   "min",
-          //   min,
-          //   "max",
-          //   max,
-          //   "amplitude",
-          //   amplitude,
-          // );
-          // console.log("Physical signal loaded:", physicalSignal);
-          //   signalWindow[channel[1]] = {
-          //     channelId: channel[1],
-          //     channel: channel[0],
-          //     signal: physicalSignal,
-          //     amplitude: amplitude,
-          //   };
-          // });
-          return [
-            channelName,
-            {
-              channelId: channelIndex,
-              channel: channelName,
-              signal: physicalSignal,
-              amplitude,
-            },
-          ] as const;
-        }),
-      );
-
-      const signalWindow = Object.fromEntries(signalEntries);
-
-      setSignalScreen(signalWindow);
-    } catch (error) {
-      console.error("Error reading recording:", error);
-    }
-
-    // return signalWindow;
-  };
-
+  // Load recording from URL query parameter or latest imported recording in IndexedDB
   useEffect(() => {
-    const sourceUrl = new URLSearchParams(window.location.search).get(
-      "recording",
-    );
-    if (!sourceUrl) return;
+    async function loadInitialRecording() {
+      const paramId =
+        new URLSearchParams(window.location.search).get("recording") ||
+        localStorage.getItem("ne_active_recording_id");
 
-    console.log("Loading recording from URL parameter:", sourceUrl);
-    // const recording = useRecording();
-
-    const recording = db.recordings
-      .get(sourceUrl)
-      .then((recording) => {
-        setRecording(recording || null);
-        console.log("Recording loaded from IndexedDB:", recording);
-      })
-      .catch((error) => {
-        console.error("Error loading recording:", error);
-      });
+      let rec: Recording | undefined;
+      if (paramId) {
+        rec = await db.recordings.get(paramId);
+      }
+      if (!rec) {
+        const all = await db.recordings
+          .orderBy("imported_at")
+          .reverse()
+          .toArray();
+        rec = all[0];
+      }
+      if (rec) {
+        localStorage.setItem("ne_active_recording_id", rec.id);
+        setRecording(rec);
+        const sessions = await db.screening_sessions
+          .where("recording_id")
+          .equals(rec.id)
+          .toArray();
+        if (sessions.length > 0) {
+          const latest = sessions[sessions.length - 1];
+          const evs = await db.detected_events
+            .where("session_id")
+            .equals(latest.id)
+            .sortBy("start_time");
+          setDetectedEvents(evs);
+        }
+      }
+    }
+    loadInitialRecording();
   }, []);
 
+  // Load recording from URL query parameter or latest imported recording in IndexedDB
   useEffect(() => {
     if (!recording) return;
-
-    console.log("Recording loaded:", recording.recording_name, recording.id);
-
     setFile({
       name: recording.recording_name,
-      size: `${(recording?.file_size_bytes / 1024 / 1024).toFixed(1)} MB`,
-      status: "Imported",
+      size: `${(recording.file_size / 1024 / 1024).toFixed(1)} MB`,
+      status:
+        recording.screening_status === "imported" ? "Imported" : "Screened",
     });
-
-    const channels =
-      recording.channels.map((index, channel) => {
-        return [index, channel];
-      }) || [];
-
-    console.log("Channels extracted from recording:", channels);
-
-    setChannels(channels);
+    const chs = recording.channels || [];
+    setChannels(chs);
     setVisible(
-      channels
-        .map((channel) => channel[1])
-        .reduce<
-          Record<number, boolean>
-        >((acc, channel) => ({ ...acc, [channel]: true }), {}),
+      chs.reduce<Record<string, boolean>>(
+        (acc, channel) => ({ ...acc, [channel]: true }),
+        {},
+      ),
     );
+  }, [recording?.id]);
 
-    readRecording(recording.file_blob, channels);
-  }, [recording]);
-
+  // Read physical EDF waveform window whenever recording, startSec, window length, or filters change
   useEffect(() => {
     if (!recording) return;
 
@@ -432,9 +425,18 @@ export function EegWorkspace() {
               className="sr-only"
             />
           </WorkspaceButton>
-          <WorkspaceButton quiet>
+          <WorkspaceButton
+            quiet
+            onClick={() =>
+              router.push(
+                recording
+                  ? `/screening?recording=${recording.id}`
+                  : "/screening",
+              )
+            }
+          >
             <Laptop className="h-3.5 w-3.5" />
-            Device Connection
+            AI Screening ({detectedEvents.length})
           </WorkspaceButton>
           {/* <WorkspaceButton onClick={() => setAnalysis(!analysis)}>
             <Activity className="h-3.5 w-3.5" />
@@ -636,7 +638,10 @@ export function EegWorkspace() {
             >
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-[11px] text-ne-fg-3">
                 <span className="font-mono text-ne-cyan">
-                  {playing ? "PLAYBACK 00:38.42" : "00:38.42"} / 05:14:00
+                  {playing
+                    ? `PLAYBACK ${formatMMSS(startSec)}`
+                    : formatMMSS(startSec)}{" "}
+                  / {formatHMS(recording.duration)}
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-full bg-ne-emerald" />
@@ -697,67 +702,66 @@ export function EegWorkspace() {
               </div>
               <div>
                 <div className="mt-4 flex flex-wrap items-center gap-2">
-                  <WorkspaceButton quiet>
+                  <WorkspaceButton
+                    quiet
+                    onClick={() =>
+                      setStartSec(Math.max(0, startSec - signalwindow))
+                    }
+                  >
                     <ChevronLeft className="h-3.5 w-3.5" />
                   </WorkspaceButton>
-                  <WorkspaceButton quiet>
+                  <WorkspaceButton
+                    quiet
+                    onClick={() =>
+                      setStartSec(
+                        Math.min(
+                          Math.max(0, recording.duration - signalwindow),
+                          startSec + signalwindow,
+                        ),
+                      )
+                    }
+                  >
                     <ChevronRight className="h-3.5 w-3.5" />
                   </WorkspaceButton>
-
-                  <div className="gap-1.5 flex items-center justify-between text-xs text-ne-fg-2">
+                  <div className="flex items-center justify-between gap-1.5 text-xs text-ne-fg-2">
                     <span className="inline-flex items-center gap-2">
                       Start
                     </span>
                     <input
                       type="number"
                       min="0"
-                      max={recording?.duration}
-                      step="0.1"
-                      defaultValue="0"
-                      value={start}
-                      // onBlur={(event) => setStart(Number(event.target.value))}
-                      onChange={(event) => setStart(Number(event.target.value))}
-                      className="w-full accent-[#42D9F5]"
+                      max={Math.max(
+                        0,
+                        Math.floor(recording.duration - signalwindow),
+                      )}
+                      step="1"
+                      value={startSec}
+                      onChange={(e) =>
+                        setStartSec(Math.max(0, Number(e.target.value)))
+                      }
+                      className="w-20 rounded-lg border border-ne-line bg-ne-bg2 px-2 py-1.5 text-xs text-ne-fg outline-none focus:border-ne-cyan"
                     />
                     <span className="inline-flex items-center gap-2">s</span>
                   </div>
-
-                  <div className="gap-1.5 flex items-center justify-between text-xs text-ne-fg-2">
+                  <div className="flex items-center justify-between gap-1.5 text-xs text-ne-fg-2">
                     <span className="inline-flex items-center gap-2">
                       Window
                     </span>
                     <select
-                      value={duration}
+                      value={signalwindow}
                       onChange={(event) =>
                         setDuration(Number(event.target.value))
                       }
                       className="ml-auto rounded-lg border border-ne-line bg-ne-bg2 px-3 py-2 text-xs text-ne-fg outline-none focus:border-ne-cyan"
                     >
-                      <option>5</option>
-                      <option>10</option>
-                      <option>20</option>
-                      <option>30</option>
-                      <option>60</option>
+                      <option value={5}>5</option>
+                      <option value={10}>10</option>
+                      <option value={15}>15</option>
+                      <option value={30}>30</option>
+                      <option value={60}>60</option>
                     </select>
                     <span className="inline-flex items-center gap-2">s</span>
                   </div>
-
-                  <div className="gap-1.5 flex items-center justify-between text-xs text-ne-fg-2">
-                    <span className="inline-flex items-center gap-2">
-                      Scale
-                    </span>
-                    <select
-                      value={montage}
-                      onChange={(event) => setMontage(event.target.value)}
-                      className="ml-auto rounded-lg border border-ne-line bg-ne-bg2 px-3 py-2 text-xs text-ne-fg outline-none focus:border-ne-cyan"
-                    >
-                      <option>0.5x</option>
-                      <option>1x</option>
-                      <option>2x</option>
-                      <option>4x</option>
-                    </select>
-                  </div>
-
                   <select
                     value={montage}
                     onChange={(event) => setMontage(event.target.value)}
@@ -768,39 +772,51 @@ export function EegWorkspace() {
                     <option>Bipolar</option>
                   </select>
                 </div>
-                <div className="flex gap-3">
-                  <span className="inline-flex items-center gap-2">
-                    {formatDuration(start)}
-                  </span>
+                <div className="mt-3 flex items-center gap-3 text-xs text-ne-fg-3">
+                  <span className="font-mono">{formatMMSS(0)}</span>
                   <input
                     type="range"
                     min="0"
-                    max="1"
-                    step="0.1"
-                    defaultValue="0"
-                    value={start / recording?.duration || 0}
+                    max={Math.max(
+                      1,
+                      Math.floor(recording.duration - signalwindow),
+                    )}
+                    step="1"
+                    value={startSec}
+                    onChange={(e) => setStartSec(Number(e.target.value))}
                     className="w-full accent-[#42D9F5]"
                     onChange={(event) =>
                       setStart(Number(event.target.value) * recording?.duration)
                     }
                   />
-                  <span className="inline-flex items-center gap-2">
-                    {formatDuration(
-                      (recording as Recording & { duration?: number })
-                        ?.duration ?? duration,
-                    )}
+                  <span className="font-mono">
+                    {formatMMSS(recording.duration)}
                   </span>
                 </div>
               </div>
-              <div className="mt-4 rounded-lg border border-ne-amber/20 bg-ne-amber/5 px-3 py-2 text-xs text-ne-amber">
-                Selected interval: {formatDuration(start)} –{" "}
-                {formatDuration(start + duration)} · scroll horizontally to
-                inspect the recording timeline.
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-ne-amber/20 bg-ne-amber/5 px-3 py-2 text-xs text-ne-amber">
+                <span>
+                  Selected interval: {formatMMSS(startSec)} –{" "}
+                  {formatMMSS(startSec + signalwindow)} ·{" "}
+                  {seizureCount > 0 || iedCount > 0
+                    ? `${seizureCount} suspected seizure(s), ${iedCount} IED candidate(s), ${artifactCount} artifact(s) flagged by model`
+                    : "Use slider or arrows to inspect timeline."}
+                </span>
+                {detectedEvents.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      router.push(`/screening?recording=${recording.id}`)
+                    }
+                    className="font-mono underline hover:text-ne-fg"
+                  >
+                    Inspect in AI Screening →
+                  </button>
+                )}
               </div>
             </Panel>
           )}
         </div>
-
         {recording && (
           <aside className="space-y-5">
             <Panel
@@ -819,15 +835,18 @@ export function EegWorkspace() {
                         [channel[1]]: !visible[channel[1]],
                       })
                     }
-                    className={`flex items-center gap-2 rounded-md px-2 py-2 text-left text-xs transition-colors ${visible[channel[1]] ? "bg-ne-elevated text-ne-fg" : "text-ne-fg-3 hover:bg-ne-bg2"}`}
+                    className={`flex items-center gap-2 rounded-md px-2 py-2 text-left text-xs transition-colors ${
+                      visible[channel]
+                        ? "bg-ne-elevated text-ne-fg"
+                        : "text-ne-fg-3 hover:bg-ne-bg2"
+                    }`}
                   >
                     <span
-                      className={`h-2 w-2 rounded-full ${visible[channel[1]] ? "bg-ne-emerald" : "bg-ne-fg-3/40"}`}
+                      className={`h-2 w-2 rounded-full ${
+                        visible[channel] ? "bg-ne-emerald" : "bg-ne-fg-3/40"
+                      }`}
                     />
-                    {channel[0]}
-                    {/* <span className="ml-auto font-mono text-[9px] text-ne-fg-3">
-                      ±50
-                    </span> */}
+                    {channel}
                   </button>
                 ))}
               </div>
@@ -835,13 +854,27 @@ export function EegWorkspace() {
           </aside>
         )}
       </div>
-      {analysis && (
+      {(analysis || detectedEvents.length > 0) && (
         <div
           role="status"
-          className="rounded-xl border border-ne-ai/20 bg-ne-ai/5 px-4 py-3 text-xs text-ne-ai"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ne-ai/20 bg-ne-ai/5 px-4 py-3 text-xs text-ne-ai"
         >
-          Analysis queued for the selected interval. This review action does not
-          modify the source recording.
+          <span>
+            {analysis
+              ? `Running NeuroEdge MLP (edge_model.json) feature extraction & inference... ${analysisProgress}%`
+              : `Screening complete: ${seizureCount} suspected seizure(s), ${iedCount} IED candidate(s), and ${artifactCount} artifact segment(s) saved for clinical review.`}
+          </span>
+          {!analysis && recording && (
+            <button
+              type="button"
+              onClick={() =>
+                router.push(`/screening?recording=${recording.id}`)
+              }
+              className="rounded-lg border border-ne-ai/30 bg-ne-ai/10 px-3 py-1 font-mono text-[11px] text-ne-ai hover:bg-ne-ai/20"
+            >
+              Open AI Screening
+            </button>
+          )}
         </div>
       )}
     </div>

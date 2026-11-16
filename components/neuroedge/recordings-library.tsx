@@ -1,6 +1,6 @@
+// components/neuroedge/recordings-library.tsx
 "use client";
-
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowUpDown,
@@ -11,7 +11,6 @@ import {
   Search,
   SlidersHorizontal,
 } from "lucide-react";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -23,99 +22,98 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { getAllRecordings } from "@/lib/storage/recording.service";
-import { Recording } from "@/lib/storage/types";
+import { useRecordings } from "@/hooks/use-recording";
 
-// const recordings = [
-//   {
-//     id: "REC-24-0817",
-//     date: "Oct 18, 2024 · 09:42",
-//     duration: "42m 18s",
-//     channels: 21,
-//     frequency: "256 Hz",
-//     quality: "Good",
-//     screening: "Screened",
-//     review: "Reviewed",
-//     events: 0,
-//   },
-//   {
-//     id: "REC-24-0816",
-//     date: "Oct 18, 2024 · 08:16",
-//     duration: "1h 08m",
-//     channels: 21,
-//     frequency: "256 Hz",
-//     quality: "Good",
-//     screening: "Candidate events",
-//     review: "Awaiting review",
-//     events: 3,
-//   },
-//   {
-//     id: "REC-24-0815",
-//     date: "Oct 17, 2024 · 16:03",
-//     duration: "28m 54s",
-//     channels: 19,
-//     frequency: "512 Hz",
-//     quality: "Fair",
-//     screening: "Screened",
-//     review: "Reviewed",
-//     events: 1,
-//   },
-//   {
-//     id: "REC-24-0814",
-//     date: "Oct 17, 2024 · 13:27",
-//     duration: "54m 12s",
-//     channels: 21,
-//     frequency: "256 Hz",
-//     quality: "Poor",
-//     screening: "Insufficient",
-//     review: "Needs attention",
-//     events: 0,
-//   },
-//   {
-//     id: "REC-24-0813",
-//     date: "Oct 17, 2024 · 10:11",
-//     duration: "36m 40s",
-//     channels: 21,
-//     frequency: "256 Hz",
-//     quality: "Good",
-//     screening: "Awaiting screening",
-//     review: "Not reviewed",
-//     events: 0,
-//   },
-//   {
-//     id: "REC-24-0812",
-//     date: "Oct 16, 2024 · 15:49",
-//     duration: "1h 22m",
-//     channels: 32,
-//     frequency: "512 Hz",
-//     quality: "Good",
-//     screening: "Candidate events",
-//     review: "Awaiting review",
-//     events: 7,
-//   },
-//   {
-//     id: "REC-24-0811",
-//     date: "Oct 16, 2024 · 11:05",
-//     duration: "18m 22s",
-//     channels: 19,
-//     frequency: "256 Hz",
-//     quality: "Fair",
-//     screening: "Screened",
-//     review: "Reviewed",
-//     events: 0,
-//   },
-//   {
-//     id: "REC-24-0810",
-//     date: "Oct 15, 2024 · 14:32",
-//     duration: "47m 05s",
-//     channels: 21,
-//     frequency: "256 Hz",
-//     quality: "Good",
-//     screening: "Candidate events",
-//     review: "Awaiting review",
-//     events: 2,
-//   },
-// ];
+const demoRecordings = [
+  {
+    id: "REC-24-0817",
+    date: "Oct 18, 2024 · 09:42",
+    duration: "42m 18s",
+    channels: 21,
+    frequency: "256 Hz",
+    quality: "Good",
+    screening: "Screened",
+    review: "Reviewed",
+    events: 0,
+  },
+  {
+    id: "REC-24-0816",
+    date: "Oct 18, 2024 · 08:16",
+    duration: "1h 08m",
+    channels: 21,
+    frequency: "256 Hz",
+    quality: "Good",
+    screening: "Candidate events",
+    review: "Awaiting review",
+    events: 3,
+  },
+  {
+    id: "REC-24-0815",
+    date: "Oct 17, 2024 · 16:03",
+    duration: "28m 54s",
+    channels: 19,
+    frequency: "512 Hz",
+    quality: "Fair",
+    screening: "Screened",
+    review: "Reviewed",
+    events: 1,
+  },
+  {
+    id: "REC-24-0814",
+    date: "Oct 17, 2024 · 13:27",
+    duration: "54m 12s",
+    channels: 21,
+    frequency: "256 Hz",
+    quality: "Poor",
+    screening: "Insufficient",
+    review: "Needs attention",
+    events: 0,
+  },
+  {
+    id: "REC-24-0813",
+    date: "Oct 17, 2024 · 10:11",
+    duration: "36m 40s",
+    channels: 21,
+    frequency: "256 Hz",
+    quality: "Good",
+    screening: "Awaiting screening",
+    review: "Not reviewed",
+    events: 0,
+  },
+  {
+    id: "REC-24-0812",
+    date: "Oct 16, 2024 · 15:49",
+    duration: "1h 22m",
+    channels: 32,
+    frequency: "512 Hz",
+    quality: "Good",
+    screening: "Candidate events",
+    review: "Awaiting review",
+    events: 7,
+  },
+  {
+    id: "REC-24-0811",
+    date: "Oct 16, 2024 · 11:05",
+    duration: "18m 22s",
+    channels: 19,
+    frequency: "256 Hz",
+    quality: "Fair",
+    screening: "Screened",
+    review: "Reviewed",
+    events: 0,
+  },
+  {
+    id: "REC-24-0810",
+    date: "Oct 15, 2024 · 14:32",
+    duration: "47m 05s",
+    channels: 21,
+    frequency: "256 Hz",
+    quality: "Good",
+    screening: "Candidate events",
+    review: "Awaiting review",
+    events: 2,
+  },
+];
 
 const filters = [
   "All recordings",
@@ -124,21 +122,16 @@ const filters = [
   "Candidate events",
   "Poor-quality",
 ];
+type RecordingRow = (typeof demoRecordings)[number] & { rawId?: string };
 
-function formatDuration(seconds: number) {
-  const totalMilliseconds = Math.max(0, Math.round(seconds * 1000));
-  const minutes = Math.floor(totalMilliseconds / 60000);
-  const remainingMilliseconds = totalMilliseconds % 60000;
-  const remainingSeconds = Math.floor(remainingMilliseconds / 1000);
-  const milliseconds = remainingMilliseconds % 1000;
-
-  // return [minutes, remainingSeconds, milliseconds]
-  //   .map((part, index) => String(part).padStart(2, "0"))
-  //   .join(":");
-  return `${minutes}m ${remainingSeconds}s`;
+function formatDurationShort(sec: number): string {
+  const s = Math.max(0, Math.round(sec || 0));
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return m > 0 ? `${m}m ${rem}s` : `${rem}s`;
 }
 
-function QualityBadge({ value }: { value: Recording["quality"] }) {
+function QualityBadge({ value }: { value: RecordingRow["quality"] }) {
   return (
     <Badge
       variant="outline"
@@ -182,22 +175,51 @@ function StatusBadge({ value }: { value: string }) {
 
 export function RecordingsLibrary() {
   const router = useRouter();
+  const dbRecordings = useRecordings();
   const [query, setQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("All recordings");
-  const [sort, setSort] = useState<keyof Recording>("date");
+  const [sort, setSort] = useState<keyof RecordingRow>("date");
   const [page, setPage] = useState(1);
-  const [recordings, setRecordings] = useState<Array<Recording>>([]);
 
-  useEffect(() => {
-    const recordings = getAllRecordings().then((recordings) =>
-      setRecordings(recordings),
-    );
-    // setActiveFilter("All recordings");
-    console.log(recordings);
-  }, []);
+  const allRecordings = useMemo<RecordingRow[]>(() => {
+    const uploadedRows: RecordingRow[] = (dbRecordings || []).map((rec) => ({
+      id: rec.recording_name,
+      rawId: rec.id,
+      date: new Date(rec.imported_at).toLocaleString("en-US", {
+        month: "short",
+        day: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+      duration: formatDurationShort(rec.duration),
+      channels: rec.channel_count,
+      frequency: `${rec.sampling_rate} Hz`,
+      quality:
+        rec.quality_status === "poor"
+          ? "Poor"
+          : rec.quality_status === "review_required"
+            ? "Fair"
+            : "Good",
+      screening:
+        rec.screening_status === "review_pending"
+          ? "Candidate events"
+          : rec.screening_status === "screened"
+            ? "Screened"
+            : "Awaiting screening",
+      review:
+        rec.screening_status === "review_pending"
+          ? "Awaiting review"
+          : rec.screening_status === "screened"
+            ? "Reviewed"
+            : "Not reviewed",
+      events: rec.screening_status === "review_pending" ? 1 : 0,
+    }));
+    return [...uploadedRows, ...demoRecordings];
+  }, [dbRecordings]);
 
   const filtered = useMemo(() => {
-    const next = recordings.filter((recording) => {
+    const next = allRecordings.filter((recording) => {
       const matchesQuery = `${recording.id} ${recording.date}`
         .toLowerCase()
         .includes(query.toLowerCase());
@@ -211,11 +233,10 @@ export function RecordingsLibrary() {
         (activeFilter === "Poor-quality" && recording.quality === "Poor");
       return matchesQuery && matchesFilter;
     });
-    console.log(next);
     return [...next].sort((a, b) =>
       String(a[sort]).localeCompare(String(b[sort])),
     );
-  }, [recordings, activeFilter, query, sort]);
+  }, [allRecordings, activeFilter, query, sort]);
 
   const visible = filtered.slice((page - 1) * 6, page * 6);
   const totalPages = Math.max(1, Math.ceil(filtered.length / 6));
@@ -243,12 +264,11 @@ export function RecordingsLibrary() {
             Open EEG Workspace
           </Button>
         </div>
-
         <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
           {[
             {
               label: "Total recordings",
-              value: `${recordings.length}`,
+              value: String(248 + (dbRecordings?.length || 0)),
               tone: "text-foreground",
             },
             { label: "Awaiting review", value: "18", tone: "text-amber-400" },
@@ -268,7 +288,6 @@ export function RecordingsLibrary() {
             </div>
           ))}
         </div>
-
         <section className="rounded-2xl border border-border/70 bg-card/55 shadow-2xl shadow-black/10">
           <div className="border-b border-border/70 p-4 sm:p-5">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -287,7 +306,9 @@ export function RecordingsLibrary() {
               <div className="flex items-center gap-2">
                 <Select
                   value={sort}
-                  onValueChange={(value) => setSort(value as keyof Recording)}
+                  onValueChange={(value) =>
+                    setSort(value as keyof RecordingRow)
+                  }
                 >
                   <SelectTrigger className="w-[154px] bg-background/70">
                     <SlidersHorizontal className="mr-2 size-3.5" />
@@ -325,7 +346,6 @@ export function RecordingsLibrary() {
               ))}
             </div>
           </div>
-
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1040px] text-left text-sm">
               <thead className="border-b border-border/60 bg-muted/20 text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -342,7 +362,9 @@ export function RecordingsLibrary() {
                   ].map((column) => (
                     <th key={column.key} className="px-4 py-3 font-medium">
                       <button
-                        onClick={() => setSort(column.key as keyof Recording)}
+                        onClick={() =>
+                          setSort(column.key as keyof RecordingRow)
+                        }
                         className="inline-flex items-center gap-1.5 hover:text-foreground"
                       >
                         {column.label}
@@ -356,7 +378,7 @@ export function RecordingsLibrary() {
               <tbody className="divide-y divide-border/50">
                 {visible.map((recording) => (
                   <tr
-                    key={recording.id}
+                    key={recording.rawId || recording.id}
                     className="transition-colors hover:bg-muted/20"
                   >
                     <td className="px-4 py-4 font-mono text-xs text-foreground">
@@ -366,13 +388,13 @@ export function RecordingsLibrary() {
                       {recording.date}
                     </td>
                     <td className="px-4 py-4 tabular-nums">
-                      {formatDuration(recording.duration)}
+                      {recording.duration}
                     </td>
                     <td className="px-4 py-4 tabular-nums">
-                      {recording.channels.length}
+                      {recording.channels}
                     </td>
                     <td className="px-4 py-4 text-muted-foreground">
-                      {recording.sampling_rate} Hz
+                      {recording.frequency}
                     </td>
                     <td className="px-4 py-4">
                       <QualityBadge value={recording.quality} />
@@ -388,9 +410,14 @@ export function RecordingsLibrary() {
                         size="sm"
                         variant="ghost"
                         className="gap-1.5 text-primary hover:text-primary"
-                        onClick={() =>
-                          router.push(`/workspace?recording=${recording.id}`)
-                        }
+                        onClick={() => {
+                          const targetId = recording.rawId || recording.id;
+                          localStorage.setItem(
+                            "ne_active_recording_id",
+                            targetId,
+                          );
+                          router.push(`/workspace?recording=${targetId}`);
+                        }}
                       >
                         Open <ExternalLink className="size-3.5" />
                       </Button>
@@ -404,6 +431,38 @@ export function RecordingsLibrary() {
                 No recordings match this search.
               </div>
             )}
+          </div>
+          <div className="flex flex-col gap-3 border-t border-border/70 p-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              Showing {filtered.length === 0 ? 0 : (page - 1) * 6 + 1}–
+              {Math.min(page * 6, filtered.length)} of {filtered.length}{" "}
+              recordings
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                className="size-8"
+                disabled={page === 1}
+                onClick={() => setPage((current) => current - 1)}
+                aria-label="Previous page"
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+              <span className="min-w-16 text-center">
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="icon"
+                className="size-8"
+                disabled={page === totalPages}
+                onClick={() => setPage((current) => current + 1)}
+                aria-label="Next page"
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
           </div>
 
           <div className="flex flex-col gap-3 border-t border-border/70 p-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
