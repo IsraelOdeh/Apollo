@@ -4,7 +4,7 @@ export interface Recording {
   id: string;
   recording_name: string;
   file_blob: Blob;
-  file_format: string;
+  file_format: "EDF" | "EDF+";
   file_size: number;
   sampling_rate: number;
   channel_count: number;
@@ -13,8 +13,14 @@ export interface Recording {
   recording_date: Date;
   imported_at: Date;
   source: "upload" | "hardware";
-  quality_status: string;
-  screening_status: string;
+  quality_status: "unknown" | "good" | "poor" | "review_required";
+  screening_status:
+    | "imported"
+    | "processing"
+    | "screened"
+    | "review_pending"
+    | "reviewed"
+    | "archived";
 }
 
 export interface ScreeningSession {

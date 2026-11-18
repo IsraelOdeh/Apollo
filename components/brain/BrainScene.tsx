@@ -191,7 +191,7 @@ function rawColor(hex: string) {
     ((n >> 16) & 255) / 255,
     ((n >> 8) & 255) / 255,
     (n & 255) / 255,
-    THREE.LinearSRGBColorSpace
+    THREE.LinearSRGBColorSpace,
   );
 }
 
@@ -233,9 +233,13 @@ function computeRegionSites(cerebrum: Float32Array, cerebellum: Float32Array) {
     const pts: THREE.Vector3[] = [];
     for (const hemi of [1, -1]) {
       for (const ray of r.rays) {
-        const dir = new THREE.Vector3(ray[0] * hemi, ray[1], ray[2]).normalize();
+        const dir = new THREE.Vector3(
+          ray[0] * hemi,
+          ray[1],
+          ray[2],
+        ).normalize();
         pts.push(
-          projectToSurface(verts, c.clone().addScaledVector(dir, 4), c.clone())
+          projectToSurface(verts, c.clone().addScaledVector(dir, 4), c.clone()),
         );
       }
     }
@@ -299,16 +303,16 @@ function Scene(props: BrainSceneProps) {
       model.surface.dispose();
       pathways.dispose();
     },
-    [model, pathways]
+    [model, pathways],
   );
 
   const sites = useMemo(
     () => computeSites(model.cerebrumVerts, electrodes),
-    [model, electrodes]
+    [model, electrodes],
   );
   const regionSites = useMemo(
     () => computeRegionSites(model.cerebrumVerts, model.cerebellumVerts),
-    [model]
+    [model],
   );
 
   const u = useMemo(
@@ -325,11 +329,16 @@ function Scene(props: BrainSceneProps) {
       uCyan: { value: rawColor(HUE_HEX[1]) },
       uEmerald: { value: rawColor(HUE_HEX[2]) },
       uSpots: {
-        value: Array.from({ length: SPOTS }, () => new THREE.Vector4(0, 0, 0, 0.3)),
+        value: Array.from(
+          { length: SPOTS },
+          () => new THREE.Vector4(0, 0, 0, 0.3),
+        ),
       },
-      uSpotData: { value: Array.from({ length: SPOTS }, () => new THREE.Vector4()) },
+      uSpotData: {
+        value: Array.from({ length: SPOTS }, () => new THREE.Vector4()),
+      },
     }),
-    []
+    [],
   );
 
   const materials = useMemo(() => {
@@ -365,7 +374,7 @@ function Scene(props: BrainSceneProps) {
 
   useEffect(
     () => () => Object.values(materials).forEach((m) => m.dispose()),
-    [materials]
+    [materials],
   );
 
   useEffect(() => {
@@ -438,12 +447,12 @@ function Scene(props: BrainSceneProps) {
           : evs.find((e) => e.id === sel.id)?.channel;
       const site = ch ? sites[ch] : undefined;
       site?.cortex.forEach((p) =>
-        push({ p, r: 0.3, i: selPulse, hue: 3, ring: true })
+        push({ p, r: 0.3, i: selPulse, hue: 3, ring: true }),
       );
     } else if (sel?.kind === "region") {
       const def = regionByKey(sel.key);
       regionSites[sel.key]?.forEach((p) =>
-        push({ p, r: def.radius, i: 0.85 * selPulse, hue: def.hue })
+        push({ p, r: def.radius, i: 0.85 * selPulse, hue: def.hue }),
       );
     }
 
@@ -468,7 +477,7 @@ function Scene(props: BrainSceneProps) {
           r: 0.24,
           i: 0.55 * a.electrodes,
           hue: sites[hoverRef.current!].hue,
-        })
+        }),
       );
     }
 
@@ -496,7 +505,7 @@ function Scene(props: BrainSceneProps) {
     } else {
       const side = camera.position.x >= 0 ? 1 : -1;
       pts = regionSites[selection.key]?.filter(
-        (p) => (p.x >= 0 ? 1 : -1) === side
+        (p) => (p.x >= 0 ? 1 : -1) === side,
       );
     }
     if (!pts || !pts.length) return null;
@@ -507,7 +516,9 @@ function Scene(props: BrainSceneProps) {
   }, [selection, sites, regionSites]);
 
   const [idle, setIdle] = useState(true);
-  const idleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   useEffect(() => () => clearTimeout(idleTimer.current), []);
 
   return (
@@ -777,4 +788,4 @@ function Marker({
         ))}
     </>
   );
-}  
+}

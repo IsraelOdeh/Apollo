@@ -86,7 +86,7 @@ function usePrefersReducedMotion() {
 function useSimulatedSignal(
   electrodes: Electrode[],
   enabled: boolean,
-  activityRef: MutableRefObject<Record<string, number>>
+  activityRef: MutableRefObject<Record<string, number>>,
 ) {
   const [events, setEvents] = useState<DetectedEvent[]>([]);
 
@@ -132,7 +132,7 @@ function useSimulatedSignal(
           setEvents((prev) => [ev, ...prev].slice(0, 12));
           schedule();
         },
-        2500 + Math.random() * 3500
+        2500 + Math.random() * 3500,
       );
     };
     schedule();
@@ -156,7 +156,7 @@ const fmtClock = (s: number) => {
 
 const fmtMs = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(
-    Math.floor(s % 60)
+    Math.floor(s % 60),
   ).padStart(2, "0")}`;
 
 const sameSelection = (a: Selection, b: Selection) =>
@@ -175,7 +175,7 @@ export default function BrainViewer({
   recordingStartedAt,
   simulate,
   defaultMode = "overview",
-  quality = "medium",
+  quality = "low",
   glow = 1,
   onSelectionChange,
   className,
@@ -250,7 +250,7 @@ export default function BrainViewer({
   const selectedEvent =
     selection?.kind === "event"
       ? (eventsProp ?? (hasDbScreening ? dbState!.brainEvents : [])).find(
-          (e) => e.id === selection.id
+          (e) => e.id === selection.id,
         )
       : undefined;
 
@@ -314,7 +314,7 @@ export default function BrainViewer({
   const simEvents = useSimulatedSignal(
     electrodes,
     simulating && status === "recording",
-    activityRef
+    activityRef,
   );
 
   const events =
@@ -341,7 +341,7 @@ export default function BrainViewer({
         return value;
       });
     },
-    [onSelectionChange]
+    [onSelectionChange],
   );
 
   const changeMode = (m: ViewMode) => {
@@ -372,11 +372,11 @@ export default function BrainViewer({
       [...electrodes]
         .sort(
           (a, b) =>
-            (activityRef.current[b.id] ?? 0) - (activityRef.current[a.id] ?? 0)
+            (activityRef.current[b.id] ?? 0) - (activityRef.current[a.id] ?? 0),
         )
         .slice(0, 3),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [electrodes, events, nodeTraces]
+    [electrodes, events, nodeTraces],
   );
 
   return (
@@ -397,7 +397,7 @@ export default function BrainViewer({
           exposure={glow}
         />
 
-        <RecordingPill
+        {/* <RecordingPill
           status={status}
           label={
             hasDbRecording
@@ -412,7 +412,7 @@ export default function BrainViewer({
               ? dbState!.recording.channel_count
               : electrodes.length
           }
-        />
+        /> */}
 
         <div className={styles.modes} role="group" aria-label="View mode">
           {MODES.map((m) => (
@@ -485,7 +485,8 @@ export default function BrainViewer({
                   Guide
                 </span>
                 <strong>
-                  Electrodes: {REGION_EDUCATION[selectedRegionKey].keyElectrodes}
+                  Electrodes:{" "}
+                  {REGION_EDUCATION[selectedRegionKey].keyElectrodes}
                 </strong>
                 <p>{REGION_EDUCATION[selectedRegionKey].eegRole}</p>
                 <p>
@@ -554,8 +555,8 @@ export default function BrainViewer({
                   if (dbState?.recording?.id) {
                     router.push(
                       `/workspace?recording=${dbState.recording.id}&start=${Math.floor(
-                        startSec
-                      )}`
+                        startSec,
+                      )}`,
                     );
                   } else {
                     router.push("/workspace");
@@ -590,7 +591,10 @@ export default function BrainViewer({
                 </InfoHelp>
               </div>
               {dbState?.recording && (
-                <span className={styles.sim} title={dbState.recording.recording_name}>
+                <span
+                  className={styles.sim}
+                  title={dbState.recording.recording_name}
+                >
                   {dbState.recording.recording_name}
                 </span>
               )}
@@ -645,8 +649,8 @@ export default function BrainViewer({
                   if (dbState?.recording?.id) {
                     router.push(
                       `/workspace?recording=${dbState.recording.id}&start=${Math.floor(
-                        startSec
-                      )}`
+                        startSec,
+                      )}`,
                     );
                   } else {
                     router.push("/workspace");
@@ -657,8 +661,7 @@ export default function BrainViewer({
 
             {!selectedElectrode && topChannels.length > 0 && (
               <p className={styles.fine}>
-                Peak active nodes:{" "}
-                {topChannels.map((c) => c.label).join(", ")}.
+                Peak active nodes: {topChannels.map((c) => c.label).join(", ")}.
               </p>
             )}
           </>
@@ -709,7 +712,7 @@ function ElectrodeDetail({
     electrode.hemisphere === "midline"
       ? "Midline"
       : `${electrode.hemisphere[0].toUpperCase()}${electrode.hemisphere.slice(
-          1
+          1,
         )} hemisphere`;
 
   const edu = getElectrodeEducation(electrode.id);
@@ -747,7 +750,9 @@ function ElectrodeDetail({
       <div className={styles.locIllustrative}>
         <div className="flex items-center justify-between gap-2">
           <span className={styles.badge}>
-            {trace ? `EDF Channel: ${trace.edfLabel}` : `Node ${electrode.label} Signal`}
+            {trace
+              ? `EDF Channel: ${trace.edfLabel}`
+              : `Node ${electrode.label} Signal`}
           </span>
           <span className={styles.data}>
             {trace ? `RMS ${trace.rmsUv} µV` : "256 Hz"}
