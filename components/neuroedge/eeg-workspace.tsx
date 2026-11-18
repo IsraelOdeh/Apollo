@@ -44,6 +44,7 @@ import { add } from "dexie";
 import { Slider } from "@radix-ui/react-slider";
 import { read } from "node:fs";
 import linspace from "@stdlib/array/linspace";
+import { readDisplaySignals } from "@/lib/eeg/edge-screening";
 
 const signalColors = ["#42D9F5", "#36E0A1", "#9D85FF", "#F6BD60"];
 
@@ -55,7 +56,11 @@ function formatDuration(seconds: number) {
   const milliseconds = remainingMilliseconds % 1000;
 
   return [minutes, remainingSeconds, milliseconds]
-    .map((part, index) => String(part).padStart(2, "0"))
+    .map((part, index) =>
+      index == 2
+        ? String(part).padStart(2, "0")
+        : String(part).padStart(2, "0"),
+    )
     .join(":");
 }
 
@@ -133,11 +138,11 @@ function FilterControl({
   onChange,
 }: {
   label: string;
-  value: string;
-  options: string[];
+  value: number;
+  options: number[];
   enabled: boolean;
   onToggle: () => void;
-  onChange: (value: string) => void;
+  onChange: (value: number) => void;
 }) {
   return (
     <div className="flex items-center gap-2">
@@ -153,7 +158,7 @@ function FilterControl({
       <label className="min-w-0 flex-1 text-xs text-ne-fg-2">{label}</label>
       <select
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => onChange(Number(event.target.value))}
         className="w-[86px] rounded-md border border-ne-line bg-ne-bg2 px-2 py-1.5 text-right text-[11px] text-ne-fg outline-none focus:border-ne-cyan"
         disabled={!enabled}
       >
@@ -252,18 +257,19 @@ export function EegWorkspace() {
     notch: false,
   });
   const [filterValues, setFilterValues] = useState({
-    high: "1 Hz",
-    low: "45 Hz",
-    notch: "60 Hz",
+    high: 1,
+    low: 45,
+    notch: 60,
   });
+  const [loadingWindow, setLoadingWindow] = useState<boolean>(false);
   const [recording, setRecording] = useState<Recording | null>(null);
   const [signalScreen, setSignalScreen] = useState<
     Record<
-      string,
+      number,
       {
         channelId: number;
         channel: string;
-        signal: Float64Array;
+        signal: number[];
         amplitude: number;
       }
     >
@@ -304,79 +310,63 @@ export function EegWorkspace() {
     [signalScreen, visible],
   );
 
-  const readRecording = async (
-    recording: Blob,
-    channels: [string, number][],
-  ) => {
-    try {
-      const edfFile = await openEdf(blobSource(recording));
+  // const readRecording = async (
+  //   recording: Blob,
+  //   channels: [string, number][],
+  // ) => {
+  //   try {
+  //     const edfFile = await openEdf(blobSource(recording));
 
-      const signalEntries = await Promise.all(
-        channels.map(async ([channelName, channelIndex]: [string, number]) => {
-          // console.log("Channel:", channel);
-          const fp1 = getSignal(edfFile.header, channelIndex);
+  //     const signalEntries = await Promise.all(
+  //       channels.map(async ([channelName, channelIndex]: [string, number]) => {
+  //         // console.log("Channel:", channel);
+  //         const fp1 = getSignal(edfFile.header, channelIndex);
 
-          const [chunk] = await readWindow(edfFile, {
-            signalIndices: [fp1.index],
-            startSeconds: startTime,
-            durationSeconds: duration,
-          }); // Read first 60 seconds
+  //         const [chunk] = await readWindow(edfFile, {
+  //           signalIndices: [fp1.index],
+  //           startSeconds: startTime,
+  //           durationSeconds: duration,
+  //         }); // Read first 60 seconds
 
-          if (!chunk?.signals[0]) {
-            console.error("No data chunk returned from readWindow.");
-            return;
-          }
+  //         if (!chunk?.signals[0]) {
+  //           console.error("No data chunk returned from readWindow.");
+  //           return;
+  //         }
 
-          const physicalSignal = toPhysical(fp1, chunk.signals[0].digital);
+  //         const physicalSignal = toPhysical(fp1, chunk.signals[0].digital);
 
-          const min = Math.min(...physicalSignal);
-          const max = Math.max(...physicalSignal);
-          const peakToPeak = max - min;
+  //         const min = Math.min(...physicalSignal);
+  //         const max = Math.max(...physicalSignal);
+  //         const peakToPeak = max - min;
 
-          const amplitude = peakToPeak / 2; // Half of the peak-to-peak value
+  //         const amplitude = peakToPeak / 2; // Half of the peak-to-peak value
 
-          // console.log(
-          //   "PP:",
-          //   peakToPeak,
-          //   "min",
-          //   min,
-          //   "max",
-          //   max,
-          //   "amplitude",
-          //   amplitude,
-          // );
-          // console.log("Physical signal loaded:", physicalSignal);
-          //   signalWindow[channel[1]] = {
-          //     channelId: channel[1],
-          //     channel: channel[0],
-          //     signal: physicalSignal,
-          //     amplitude: amplitude,
-          //   };
-          // });
-          return [
-            channelName,
-            {
-              channelId: channelIndex,
-              channel: channelName,
-              signal: physicalSignal,
-              amplitude,
-            },
-          ] as const;
-        }),
-      );
+  //         return [
+  //           channelName,
+  //           {
+  //             channelId: channelIndex,
+  //             channel: channelName,
+  //             signal: physicalSignal,
+  //             amplitude,
+  //           },
+  //         ] as const;
+  //       }),
+  //     );
 
-      const validSignalEntries = signalEntries.filter(
-        (entry): entry is NonNullable<typeof entry> => entry !== undefined,
-      );
-      const signalWindow = Object.fromEntries(validSignalEntries);
+  //     const validSignalEntries = signalEntries.filter(
+  //       (entry): entry is NonNullable<typeof entry> => entry !== undefined,
+  //     );
+  //     const signalWindow = Object.fromEntries(validSignalEntries);
 
-      setSignalScreen(signalWindow);
-    } catch (error) {
-      console.error("Error reading recording:", error);
-    }
+  //     console.log("Signal window read:", signalWindow);
 
-    // return signalWindow;
-  };
+  //     setSignalScreen(signalWindow);
+  //   } catch (error) {
+  //     console.error("Error reading recording:", error);
+  //   }
+
+  //   // return signalWindow;
+  // };
 
   useEffect(() => {
     const sourceUrl = new URLSearchParams(window.location.search).get(
@@ -425,14 +415,41 @@ export function EegWorkspace() {
         >((acc, channel) => ({ ...acc, [channel]: true }), {}),
     );
 
-    readRecording(recording.file_blob, channels);
+    // readRecording(recording.file_blob, channels);
+    readDisplaySignals(recording.file_blob, startTime, duration, 360, {
+      highPassHz: filters.high ? filterValues.high : null,
+      lowPassHz: filters.low ? filterValues.low : null,
+      notchHz: filters.notch ? filterValues.notch : null,
+    })
+      .then((signalWindow) => {
+        setSignalScreen(signalWindow);
+        console.log("Signal window read and set:", signalWindow);
+      })
+      .catch((error) => {
+        console.error("Error reading signal window:", error);
+      });
   }, [recording]);
 
   useEffect(() => {
     if (!recording) return;
 
-    readRecording(recording.file_blob, channels);
-  }, [duration, startTime]);
+    if (loadingWindow) return;
+
+    setLoadingWindow(true);
+    // readRecording(recording.file_blob, channels);
+    readDisplaySignals(recording.file_blob, startTime, duration, 360, {
+      highPassHz: filters.high ? filterValues.high : null,
+      lowPassHz: filters.low ? filterValues.low : null,
+      notchHz: filters.notch ? filterValues.notch : null,
+    })
+      .then((signalWindow) => {
+        setSignalScreen(signalWindow);
+        setLoadingWindow(false);
+      })
+      .catch((error) => {
+        console.error("Error reading signal window:", error);
+      });
+  }, [duration, startTime, filters, filterValues]);
 
   return (
     <div className="space-y-5">
@@ -524,7 +541,7 @@ export function EegWorkspace() {
                 <FilterControl
                   label="High-pass filter"
                   value={filterValues.high}
-                  options={["0.5 Hz", "1 Hz", "2 Hz"]}
+                  options={[0.5, 1, 2]}
                   enabled={filters.high}
                   onToggle={() =>
                     setFilters({ ...filters, high: !filters.high })
@@ -536,7 +553,7 @@ export function EegWorkspace() {
                 <FilterControl
                   label="Low-pass filter"
                   value={filterValues.low}
-                  options={["30 Hz", "45 Hz", "70 Hz"]}
+                  options={[30, 45, 70]}
                   enabled={filters.low}
                   onToggle={() => setFilters({ ...filters, low: !filters.low })}
                   onChange={(value) =>
@@ -546,7 +563,7 @@ export function EegWorkspace() {
                 <FilterControl
                   label="Notch filter"
                   value={filterValues.notch}
-                  options={["50 Hz", "60 Hz"]}
+                  options={[50, 60]}
                   enabled={filters.notch}
                   onToggle={() =>
                     setFilters({ ...filters, notch: !filters.notch })
@@ -557,7 +574,7 @@ export function EegWorkspace() {
                 />
               </div>
               <div>
-                <div className="border-t border-ne-line">
+                {/* <div className="border-t border-ne-line">
                   <div className="mb-2 flex items-center justify-between text-xs text-ne-fg-2">
                     <span className="inline-flex items-center gap-2">
                       <Gauge className="h-3.5 w-3.5 text-ne-cyan" />
@@ -573,8 +590,8 @@ export function EegWorkspace() {
                     defaultValue="1"
                     className="w-full accent-[#42D9F5]"
                   />
-                </div>
-                <div>
+                </div> */}
+                {/* <div>
                   <div className="mb-2 flex items-center justify-between text-xs text-ne-fg-2">
                     <span>Time window</span>
                     <span className="font-mono text-ne-fg">20 sec</span>
@@ -586,8 +603,8 @@ export function EegWorkspace() {
                     defaultValue="20"
                     className="w-full accent-[#42D9F5]"
                   />
-                </div>
-                <label className="flex items-center justify-between gap-3 text-xs text-ne-fg-2">
+                </div> */}
+                {/* <label className="flex items-center justify-between gap-3 text-xs text-ne-fg-2">
                   <span className="inline-flex items-center gap-2">
                     <Filter className="h-3.5 w-3.5 text-ne-amber" />
                     Highlight artifacts
@@ -597,7 +614,7 @@ export function EegWorkspace() {
                     defaultChecked
                     className="h-4 w-4 accent-[#F6BD60]"
                   />
-                </label>
+                </label> */}
               </div>
               {/* <div className="mt-5 rounded-xl border border-ne-cyan/20 bg-ne-cyan/5 p-3">
                   <p className="flex items-center gap-2 text-xs font-medium text-ne-cyan">
@@ -680,44 +697,42 @@ export function EegWorkspace() {
                   <div className="grid grid-cols-[50px_1fr] gap-3 sticky top-0 stretch">
                     <div></div>
                     <div className="mb-2 flex items-center justify-between text-xs text-ne-fg-2">
-                      {Array.from(linspace(start, start + duration, 5)).map(
-                        (time, index) => {
-                          return (
-                            <div>
-                              <span key={index}>{formatDuration(time)}</span>
-                              <div className="h-[100vh] absolute w-px bg-[#fcfcfccc]" />
-                            </div>
-                          );
-                        },
-                      )}
+                      {Array.from(
+                        linspace(startTime, startTime + duration, 5),
+                      ).map((time, index) => {
+                        return (
+                          <div>
+                            <span key={index}>{formatDuration(time)}</span>
+                            <div className="h-[100vh] absolute w-px bg-[#fcfcfccc]" />
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                   {
-                    Object.values(signalScreen).map(
-                      (entry, index) =>
-                        visible[entry.channelId] && (
-                          <div
-                            key={index}
-                            className="grid grid-cols-[50px_1fr] items-center gap-3 border-b border-ne-line/50 py-1.5 last:border-0"
-                          >
-                            <div className="flex flex-col items-end gap-0.5">
-                              <span className="font-mono text-[10px] text-ne-fg-2">
-                                {entry.channel}
-                              </span>
-                              <span className="font-mono text-[9px] text-ne-fg-3">
-                                ±{Math.round(entry.amplitude)} µV
-                              </span>
-                            </div>
-                            <div className="relative text-ne-cyan">
-                              <Waveform
-                                physicalSignal={entry.signal}
-                                color={
-                                  signalColors[index % signalColors.length]
-                                }
-                              />
-                            </div>
+                    Object.values(visibleChannels).map(
+                      (entry, index) => (
+                        // visible[entry.channelId] &&
+                        <div
+                          key={index}
+                          className="grid grid-cols-[50px_1fr] items-center gap-3 border-b border-ne-line/50 py-1.5 last:border-0"
+                        >
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span className="font-mono text-[10px] text-ne-fg-2">
+                              {entry.channel}
+                            </span>
+                            <span className="font-mono text-[9px] text-ne-fg-3">
+                              ±{Math.round(entry.amplitude)} µV
+                            </span>
                           </div>
-                        ),
+                          <div className="relative text-ne-cyan">
+                            <Waveform
+                              physicalSignal={entry.signal}
+                              color={signalColors[index % signalColors.length]}
+                            />
+                          </div>
+                        </div>
+                      ),
                       // }
                     )
                     // )
@@ -742,7 +757,7 @@ export function EegWorkspace() {
                       min="0"
                       max={recording?.duration}
                       step="0.1"
-                      value={start}
+                      value={startTime.toFixed(2)}
                       onBlur={(event) => updateStartTime()}
                       onChange={(event) => setStart(Number(event.target.value))}
                       className="w-full accent-[#42D9F5]"
@@ -804,8 +819,7 @@ export function EegWorkspace() {
                     type="range"
                     min="0"
                     max="1"
-                    step="0.1"
-                    defaultValue="0"
+                    step="0.0001"
                     value={startTime / recording?.duration || 0}
                     className="w-full accent-[#42D9F5]"
                     onChange={(event) =>
@@ -821,11 +835,6 @@ export function EegWorkspace() {
                     )}
                   </span>
                 </div>
-              </div>
-              <div className="mt-4 rounded-lg border border-ne-amber/20 bg-ne-amber/5 px-3 py-2 text-xs text-ne-amber">
-                Selected interval: {formatDuration(start)} –{" "}
-                {formatDuration(start + duration)} · scroll horizontally to
-                inspect the recording timeline.
               </div>
             </Panel>
           )}
@@ -865,15 +874,6 @@ export function EegWorkspace() {
           </aside>
         )}
       </div>
-      {analysis && (
-        <div
-          role="status"
-          className="rounded-xl border border-ne-ai/20 bg-ne-ai/5 px-4 py-3 text-xs text-ne-ai"
-        >
-          Analysis queued for the selected interval. This review action does not
-          modify the source recording.
-        </div>
-      )}
     </div>
   );
 }

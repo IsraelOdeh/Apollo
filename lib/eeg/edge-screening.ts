@@ -77,7 +77,10 @@ export interface ChannelMasks {
 /**
  * Computes accurate total duration in seconds from an EDF header and file size.
  */
-export function getEdfTotalDurationSeconds(edfFile: any, fileSize: number): number {
+export function getEdfTotalDurationSeconds(
+  edfFile: any,
+  fileSize: number,
+): number {
   const hdr = edfFile?.header ?? {};
   const recordDur = Number(hdr.recordDurationSeconds ?? 1) || 1;
   const numRecords = Number(
@@ -85,7 +88,7 @@ export function getEdfTotalDurationSeconds(edfFile: any, fileSize: number): numb
       hdr.numberOfDataRecords ??
       hdr.dataRecordCount ??
       hdr.recordCount ??
-      0
+      0,
   );
 
   if (Number(hdr.durationSeconds) > recordDur) {
@@ -96,15 +99,20 @@ export function getEdfTotalDurationSeconds(edfFile: any, fileSize: number): numb
   }
 
   const signals: any[] = hdr.signals ?? [];
-  const headerBytes = Number(hdr.headerBytes ?? (256 + signals.length * 256));
+  const headerBytes = Number(hdr.headerBytes ?? 256 + signals.length * 256);
   const samplesPerRecord = signals.reduce(
     (acc, s) =>
-      acc + Number(s.samplesPerRecord ?? Math.round((s.sampleRateHz || 256) * recordDur)),
-    0
+      acc +
+      Number(
+        s.samplesPerRecord ?? Math.round((s.sampleRateHz || 256) * recordDur),
+      ),
+    0,
   );
   const bytesPerRecord = samplesPerRecord * 2;
   if (bytesPerRecord > 0 && fileSize > headerBytes) {
-    const estimatedRecords = Math.floor((fileSize - headerBytes) / bytesPerRecord);
+    const estimatedRecords = Math.floor(
+      (fileSize - headerBytes) / bytesPerRecord,
+    );
     if (estimatedRecords > 0) {
       return estimatedRecords * recordDur;
     }
@@ -137,7 +145,7 @@ function applyBiquadZeroPhase(
   b1: number,
   b2: number,
   a1: number,
-  a2: number
+  a2: number,
 ): Float64Array {
   const n = signal.length;
   if (n < 4) return signal;
@@ -218,11 +226,15 @@ function designLowPassBiquad(fc: number, fs: number) {
 
 export function filterChannel256Hz(
   raw: Float64Array,
-  opts: { highPassHz?: number | null; lowPassHz?: number | null; notchHz?: number | null } = {
+  opts: {
+    highPassHz?: number | null;
+    lowPassHz?: number | null;
+    notchHz?: number | null;
+  } = {
     highPassHz: 0.5,
     lowPassHz: 45,
     notchHz: 50,
-  }
+  },
 ): Float64Array {
   let sig = raw;
   if (opts.notchHz) {
@@ -243,7 +255,11 @@ export function filterChannel256Hz(
 /**
  * Resamples an arbitrary 1D signal to 256 Hz.
  */
-function resampleTo256Hz(input: Float64Array, rawFs: number, durationSec: number): Float64Array {
+function resampleTo256Hz(
+  input: Float64Array,
+  rawFs: number,
+  durationSec: number,
+): Float64Array {
   const targetLen = Math.round(durationSec * TARGET_FS);
   if (rawFs === 256 && input.length === targetLen) {
     return input;
@@ -347,7 +363,9 @@ function sumSquares(arr: Float64Array): number {
 /**
  * 5-level Daubechies-4 DWT relative sub-band power decomposition.
  */
-function computeDWTdb4Bands1D(seg: Float64Array): [number, number, number, number, number] {
+function computeDWTdb4Bands1D(
+  seg: Float64Array,
+): [number, number, number, number, number] {
   const A1 = dwtConvSameDecimate(seg, LO_D);
   const D2 = dwtConvSameDecimate(A1, HI_D);
   const A2 = dwtConvSameDecimate(A1, LO_D);
@@ -394,12 +412,14 @@ function sampleVariance(arr: Float64Array): number {
 export function extract28Features(
   channelsSeg: Float64Array[],
   baseTKEO: number,
-  masks: ChannelMasks
+  masks: ChannelMasks,
 ): { features28: number[]; channelTkeo: number[]; channelRms: number[] } {
   const numCh = channelsSeg.length;
   const N = WIN_SAMPLES;
 
-  const chMat: number[][] = Array.from({ length: 12 }, () => new Array(numCh).fill(0));
+  const chMat: number[][] = Array.from({ length: 12 }, () =>
+    new Array(numCh).fill(0),
+  );
   const rawTkeoArr = new Array<number>(numCh).fill(0);
   const rmsArr = new Array<number>(numCh).fill(0);
 
@@ -466,7 +486,8 @@ export function extract28Features(
     }
     const specEnt = ent / log2Denom;
 
-    const [dwtDelta, dwtTheta, dwtAlpha, dwtBeta, dwtGamma] = computeDWTdb4Bands1D(seg);
+    const [dwtDelta, dwtTheta, dwtAlpha, dwtBeta, dwtGamma] =
+      computeDWTdb4Bands1D(seg);
 
     chMat[0][c] = LL;
     chMat[1][c] = RMS;
@@ -547,7 +568,9 @@ export function extract28Features(
  * 3. Hidden layers with ReLU
  * 4. Output layer with Softmax -> [probNonSeizure, probSeizure]
  */
-export function predictEdgeModelProbs(rawFeatures28: number[]): [number, number] {
+export function predictEdgeModelProbs(
+  rawFeatures28: number[],
+): [number, number] {
   const { featureNames, preprocess, layers } = EDGE_MODEL;
   let h = new Array<number>(featureNames.length);
 
@@ -597,16 +620,33 @@ export async function readDisplaySignals(
   fileBlob: Blob,
   startSec: number,
   durationSec: number,
-  filterOpts: {
-    highPassHz: number | null;
-    lowPassHz: number | null;
-    notchHz: number | null;
-  }
-): Promise<Record<string, number[]>> {
+  pointsCount?: number,
+  filterOpts?: {
+    highPassHz?: number | null;
+    lowPassHz?: number | null;
+    notchHz?: number | null;
+  },
+): Promise<
+  Record<
+    string,
+    { channelId: number; channel: string; signal: number[]; amplitude: number }
+  >
+> {
+  console.log(
+    `Reading display signals: start=${startSec}s, dur=${durationSec}s, filter=`,
+    filterOpts,
+  );
+
   const edfFile = await openEdf(blobSource(fileBlob as File));
   const totalSec = getEdfTotalDurationSeconds(edfFile, fileBlob.size);
-  const clampedStart = Math.max(0, Math.min(startSec, Math.max(0, totalSec - 1)));
-  const clampedDur = Math.max(1, Math.min(durationSec, Math.max(1, totalSec - clampedStart)));
+  const clampedStart = Math.max(
+    0,
+    Math.min(startSec, Math.max(0, totalSec - 1)),
+  );
+  const clampedDur = Math.max(
+    1,
+    Math.min(durationSec, Math.max(1, totalSec - clampedStart)),
+  );
 
   const signals = edfFile.header.signals;
   const signalIndices = signals.map((s: any, idx: number) => s.index ?? idx);
@@ -616,7 +656,10 @@ export async function readDisplaySignals(
     durationSeconds: clampedDur,
   });
 
-  const result: Record<string, number[]> = {};
+  const result: Record<
+    string,
+    { channelId: number; channel: string; signal: number[]; amplitude: number }
+  > = {};
   if (!chunks || chunks.length === 0) return result;
 
   for (let sIdx = 0; sIdx < signals.length; sIdx++) {
@@ -650,19 +693,29 @@ export async function readDisplaySignals(
     const resampled = resampleTo256Hz(
       combined,
       sigHeader.sampleRateHz || 256,
-      clampedDur
+      clampedDur,
     );
     const filtered = filterChannel256Hz(resampled, filterOpts);
 
-    // Downsample to 320 display points for crisp SVG rendering
-    const pointsCount = 320;
+    const amplitude = (Math.max(...filtered) - Math.min(...filtered)) / 2;
+
+    // Downsample display points for crisp SVG rendering
+    pointsCount = pointsCount
+      ? Math.min(pointsCount, filtered.length)
+      : (pointsCount = filtered.length);
+
     const step = Math.max(1, Math.floor(filtered.length / pointsCount));
     const downsampled: number[] = [];
     for (let i = 0; i < pointsCount; i++) {
       const idx = Math.min(filtered.length - 1, i * step);
       downsampled.push(filtered[idx]);
     }
-    result[sigHeader.label] = downsampled;
+    result[sigHeader.index] = {
+      channelId: sigHeader.index,
+      channel: sigHeader.label,
+      signal: downsampled,
+      amplitude,
+    };
   }
 
   return result;
@@ -674,7 +727,7 @@ export async function readDisplaySignals(
  */
 export async function runEdgeScreeningOnRecording(
   recording: Recording,
-  onProgress?: (percent: number) => void
+  onProgress?: (percent: number) => void,
 ): Promise<{ session: ScreeningSession; events: DetectedEvent[] }> {
   const startTimeMs = performance.now();
   const sessionId = crypto.randomUUID();
@@ -705,13 +758,15 @@ export async function runEdgeScreeningOnRecording(
   const edfFile = await openEdf(blobSource(recording.file_blob as File));
   const totalSec = Math.max(
     WIN_SEC,
-    getEdfTotalDurationSeconds(edfFile, recording.file_blob.size)
+    getEdfTotalDurationSeconds(edfFile, recording.file_blob.size),
   );
 
   // Filter valid EEG signals
   const allSignals = Array.from(edfFile.header.signals ?? []);
   let eegSignals = allSignals.filter((s) => {
-    const lbl = String(s.label || "").toUpperCase().trim();
+    const lbl = String(s.label || "")
+      .toUpperCase()
+      .trim();
     return (
       lbl !== "-" &&
       lbl.length > 0 &&
@@ -777,7 +832,9 @@ export async function runEdgeScreeningOnRecording(
         if (dig && dig.length > 0) {
           let phys = Float64Array.from(toPhysical(sigHdr, dig));
           // Convert mV to uV if unit is mV
-          const unit = String(sigHdr.physicalDimension || sigHdr.unit || "uV").toLowerCase();
+          const unit = String(
+            sigHdr.physicalDimension || sigHdr.unit || "uV",
+          ).toLowerCase();
           if (unit === "mv") {
             for (let i = 0; i < phys.length; i++) phys[i] *= 1000;
           }
@@ -794,7 +851,7 @@ export async function runEdgeScreeningOnRecording(
       const resampled = resampleTo256Hz(
         merged,
         sigHdr.sampleRateHz || 256,
-        chunkDur
+        chunkDur,
       );
       channelArrays.push(filterChannel256Hz(resampled));
     }
@@ -832,13 +889,13 @@ export async function runEdgeScreeningOnRecording(
       totalWindows++;
       const sStart = w * WIN_SAMPLES;
       const winSegs = channelArrays.map((arr) =>
-        arr.subarray(sStart, sStart + WIN_SAMPLES)
+        arr.subarray(sStart, sStart + WIN_SAMPLES),
       );
 
       const { features28, channelTkeo, channelRms } = extract28Features(
         winSegs,
         baseTKEO,
-        masks
+        masks,
       );
 
       const [, seizureProb] = predictEdgeModelProbs(features28);
@@ -936,7 +993,7 @@ export async function runEdgeScreeningOnRecording(
     .slice(0, 5);
 
   const finalDetections = [...seizures, ...ieds, ...artifacts].sort(
-    (a, b) => a.startSec - b.startSec
+    (a, b) => a.startSec - b.startSec,
   );
 
   const dbEvents: DetectedEvent[] = finalDetections.map((det) => ({
@@ -955,11 +1012,15 @@ export async function runEdgeScreeningOnRecording(
     60,
     Math.min(
       99,
-      Math.round((1 - artifactWindows / Math.max(1, totalWindows)) * 100)
-    )
+      Math.round((1 - artifactWindows / Math.max(1, totalWindows)) * 100),
+    ),
   );
   const qualityStatus =
-    qualityScore >= 85 ? "good" : qualityScore >= 70 ? "review_required" : "poor";
+    qualityScore >= 85
+      ? "good"
+      : qualityScore >= 70
+        ? "review_required"
+        : "poor";
 
   const overallResult =
     seizures.length > 0 || ieds.length > 0
@@ -999,9 +1060,11 @@ export async function runEdgeScreeningOnRecording(
         duration: totalSec,
         quality_status: qualityStatus,
         screening_status:
-          seizures.length > 0 || ieds.length > 0 ? "review_pending" : "screened",
+          seizures.length > 0 || ieds.length > 0
+            ? "review_pending"
+            : "screened",
       });
-    }
+    },
   );
 
   onProgress?.(100);

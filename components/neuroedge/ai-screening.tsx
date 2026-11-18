@@ -114,7 +114,7 @@ function formatMMSS(seconds: number): string {
 function mapDbEventToUi(
   ev: DetectedEvent,
   qualityLabel: string,
-  noteText?: string
+  noteText?: string,
 ): ScreeningEvent {
   const kind: EventKind =
     ev.event_type === "seizure_candidate"
@@ -172,7 +172,9 @@ export function AiScreening() {
   const [recording, setRecording] = useState<Recording | null>(null);
   const [session, setSession] = useState<ScreeningSession | null>(null);
   const [events, setEvents] = useState<ScreeningEvent[]>(fallbackDemoEvents);
-  const [selected, setSelected] = useState<ScreeningEvent>(fallbackDemoEvents[0]);
+  const [selected, setSelected] = useState<ScreeningEvent>(
+    fallbackDemoEvents[0],
+  );
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(100);
   const [reviewStatus, setReviewStatus] = useState<
@@ -191,7 +193,10 @@ export function AiScreening() {
       rec = await db.recordings.get(paramId);
     }
     if (!rec) {
-      const all = await db.recordings.orderBy("imported_at").reverse().toArray();
+      const all = await db.recordings
+        .orderBy("imported_at")
+        .reverse()
+        .toArray();
       rec = all[0];
     }
     if (!rec) return;
@@ -202,6 +207,8 @@ export function AiScreening() {
       .equals(rec.id)
       .toArray();
 
+    console.log("Sessions:", sessions);
+
     let activeSession = sessions[sessions.length - 1];
     let dbEvents: DetectedEvent[] = [];
 
@@ -209,7 +216,7 @@ export function AiScreening() {
       setRunning(true);
       setProgress(10);
       const res = await runEdgeScreeningOnRecording(rec, (pct) =>
-        setProgress(pct)
+        setProgress(pct),
       );
       activeSession = res.session;
       dbEvents = res.events;
@@ -236,7 +243,7 @@ export function AiScreening() {
 
     if (dbEvents.length > 0) {
       const mapped = dbEvents.map((ev) =>
-        mapDbEventToUi(ev, qualityLabel, notesByEvent.get(ev.id))
+        mapDbEventToUi(ev, qualityLabel, notesByEvent.get(ev.id)),
       );
       setEvents(mapped);
       setSelected(mapped[0]);
@@ -265,7 +272,7 @@ export function AiScreening() {
   }, []);
 
   async function handleUpdateReview(
-    nextStatus: "Needs review" | "Confirmed annotation" | "Rejected"
+    nextStatus: "Needs review" | "Confirmed annotation" | "Rejected",
   ) {
     setReviewStatus(nextStatus);
     const dbStatus =
@@ -286,8 +293,8 @@ export function AiScreening() {
                   ? "Needs review"
                   : "Human reviewed",
             }
-          : ev
-      )
+          : ev,
+      ),
     );
 
     if (session && !selected.id.startsWith("demo-")) {
@@ -334,8 +341,7 @@ export function AiScreening() {
 
   return (
     <div className="space-y-5">
-      
-      <div className="grid gap-5 xl:grid-cols-[1fr_300px]">
+      <div className="grid gap-5 xl:grid-cols-[1fr_300px] relative">
         <div className="space-y-5">
           <Panel
             title="Screening overview"
@@ -390,14 +396,14 @@ export function AiScreening() {
               </div>
             </div>
           </Panel>
-         <Panel
+          <Panel
             title="Screening result"
             eyebrow="Automated triage summary"
             actions={
               <InfoHelp title="How NeuroEdge MLP Scoring Works">
                 <p>
-                  Each 2-second window (512 samples at 256 Hz) is decomposed into
-                  28 time, frequency, wavelet (db4), and spatial features.
+                  Each 2-second window (512 samples at 256 Hz) is decomposed
+                  into 28 time, frequency, wavelet (db4), and spatial features.
                 </p>
                 <p>
                   The 3-layer MLP outputs a seizure probability, smoothed over a
@@ -450,7 +456,7 @@ export function AiScreening() {
                   router.push(
                     recording
                       ? `/workspace?recording=${recording.id}`
-                      : "/workspace"
+                      : "/workspace",
                   )
                 }
                 className="inline-flex items-center gap-1.5 rounded-lg border border-ne-line px-2.5 py-1.5 text-xs text-ne-fg-2 hover:text-ne-fg"
@@ -494,7 +500,7 @@ export function AiScreening() {
                   style={{
                     left: `${Math.min(
                       98,
-                      Math.max(1, (event.seconds / totalDur) * 100)
+                      Math.max(1, (event.seconds / totalDur) * 100),
                     )}%`,
                   }}
                 />
@@ -536,7 +542,7 @@ export function AiScreening() {
                   <div className="flex items-center gap-3">
                     <span
                       className={`rounded-md border px-2 py-1 text-[10px] font-medium ${statusTone(
-                        event.kind
+                        event.kind,
                       )}`}
                     >
                       {event.kind}
@@ -554,9 +560,15 @@ export function AiScreening() {
             </div>
           </Panel>
         </div>
-        <Panel title="Event details" eyebrow="Human review controls">
+        <Panel
+          title="Event details"
+          eyebrow="Human review controls"
+          className="h-fit sticky top-[62px]"
+        >
           <div className="space-y-4">
-            <div className={`rounded-lg border p-3 ${statusTone(selected.kind)}`}>
+            <div
+              className={`rounded-lg border p-3 ${statusTone(selected.kind)}`}
+            >
               <div className="flex items-center gap-2 text-sm font-medium">
                 <Sparkles className="h-4 w-4" />
                 {selected.kind}
@@ -641,7 +653,6 @@ export function AiScreening() {
                 {noteSaved ? "Saved" : "Save note"}
               </button>
             </div>
-            
           </div>
         </Panel>
       </div>
