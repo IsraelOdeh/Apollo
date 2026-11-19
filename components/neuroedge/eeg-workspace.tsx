@@ -39,7 +39,10 @@ import {
   readWindow,
   toPhysical,
 } from "edfcore";
-import { db, type ScreeningSession as DbScreeningSession } from "@/lib/storage/db";
+import {
+  db,
+  type ScreeningSession as DbScreeningSession,
+} from "@/lib/storage/db";
 import { useRecording } from "@/hooks/use-recording";
 import { Recording } from "@/lib/storage/types";
 import { add } from "dexie";
@@ -582,7 +585,7 @@ export function EegWorkspace() {
                 setStartTime(
                   Math.min(
                     startTime + 0.1,
-                    recording?.duration - duration || 0,
+                    Math.max((recording?.duration ?? 0) - duration, 0),
                   ),
                 )
               }
@@ -595,7 +598,7 @@ export function EegWorkspace() {
               <input
                 type="number"
                 min="0"
-                max={recording?.duration - duration}
+                max={(recording?.duration ?? 0) - duration}
                 step="0.1"
                 value={startTime.toFixed(2)}
                 onBlur={(event) => updateStartTime()}
@@ -611,13 +614,16 @@ export function EegWorkspace() {
                 value={duration}
                 onChange={(event) => {
                   console.log(
-                    recording?.duration - startTime <
+                    (recording?.duration ?? 0) - startTime <
                       Number(event.target.value),
                   );
-                  console.log(recording?.duration - Number(event.target.value));
+                  console.log(
+                    (recording?.duration ?? 0) - Number(event.target.value),
+                  );
                   setStartTime(
-                    recording?.duration - startTime < Number(event.target.value)
-                      ? recording?.duration - Number(event.target.value)
+                    (recording?.duration ?? 0) - startTime <
+                      Number(event.target.value)
+                      ? (recording?.duration ?? 0) - Number(event.target.value)
                       : startTime,
                   );
                   setDuration(Number(event.target.value));
@@ -661,11 +667,12 @@ export function EegWorkspace() {
               min="0"
               max="1"
               step="0.0001"
-              value={startTime / (recording?.duration - duration) || 0}
+              value={startTime / ((recording?.duration ?? 0) - duration) || 0}
               className="w-full accent-[#42D9F5]"
               onChange={(event) =>
                 setStartTime(
-                  Number(event.target.value) * (recording?.duration - duration),
+                  Number(event.target.value) *
+                    ((recording?.duration ?? 0) - duration),
                 )
               }
             />
@@ -724,9 +731,7 @@ export function EegWorkspace() {
         actions={<History className="h-4 w-4 text-ne-fg-3" />}
       >
         {loadingScreeningHistory ? (
-          <p className="text-xs text-ne-fg-3">
-            Loading screening sessions…
-          </p>
+          <p className="text-xs text-ne-fg-3">Loading screening sessions…</p>
         ) : screeningHistory.length === 0 ? (
           <div className="rounded-xl border border-dashed border-ne-line px-4 py-6 text-center">
             <History className="mx-auto h-5 w-5 text-ne-fg-3" />
