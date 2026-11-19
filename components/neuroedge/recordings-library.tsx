@@ -215,7 +215,8 @@ export function RecordingsLibrary() {
             : "Not reviewed",
       events: rec.screening_status === "review_pending" ? 1 : 0,
     }));
-    return [...uploadedRows, ...demoRecordings];
+    console.log("dbRecordings", dbRecordings);
+    return uploadedRows;
   }, [dbRecordings]);
 
   const filtered = useMemo(() => {
@@ -268,12 +269,32 @@ export function RecordingsLibrary() {
           {[
             {
               label: "Total recordings",
-              value: String(248 + (dbRecordings?.length || 0)),
+              value: String(dbRecordings?.length || 0),
               tone: "text-foreground",
             },
-            { label: "Awaiting review", value: "18", tone: "text-amber-400" },
-            { label: "Candidate events", value: "31", tone: "text-sky-400" },
-            { label: "Quality flagged", value: "7", tone: "text-rose-400" },
+            {
+              label: "Awaiting review",
+              value: String(
+                dbRecordings?.filter((r) => r.review === "Awaiting review")
+                  .length || 0,
+              ),
+              tone: "text-amber-400",
+            },
+            {
+              label: "Candidate events",
+              value: String(
+                dbRecordings?.filter((r) => r.screening === "Candidate events")
+                  .length || 0,
+              ),
+              tone: "text-sky-400",
+            },
+            {
+              label: "Quality flagged",
+              value: String(
+                dbRecordings?.filter((r) => r.quality === "Poor").length || 0,
+              ),
+              tone: "text-rose-400",
+            },
           ].map((stat) => (
             <div
               key={stat.label}
@@ -432,39 +453,6 @@ export function RecordingsLibrary() {
               </div>
             )}
           </div>
-          <div className="flex flex-col gap-3 border-t border-border/70 p-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-            <span>
-              Showing {filtered.length === 0 ? 0 : (page - 1) * 6 + 1}–
-              {Math.min(page * 6, filtered.length)} of {filtered.length}{" "}
-              recordings
-            </span>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="icon"
-                className="size-8"
-                disabled={page === 1}
-                onClick={() => setPage((current) => current - 1)}
-                aria-label="Previous page"
-              >
-                <ChevronLeft className="size-4" />
-              </Button>
-              <span className="min-w-16 text-center">
-                Page {page} of {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="icon"
-                className="size-8"
-                disabled={page === totalPages}
-                onClick={() => setPage((current) => current + 1)}
-                aria-label="Next page"
-              >
-                <ChevronRight className="size-4" />
-              </Button>
-            </div>
-          </div>
-
           <div className="flex flex-col gap-3 border-t border-border/70 p-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
             <span>
               Showing {filtered.length === 0 ? 0 : (page - 1) * 6 + 1}–

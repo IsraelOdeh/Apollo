@@ -261,7 +261,7 @@ export default function BrainViewer({
     let cancelled = false;
     const targetStartSec = selectedEvent ? Math.max(0, selectedEvent.t - 1) : 0;
 
-    readDisplaySignals(rec.file_blob, targetStartSec, 4, {
+    readDisplaySignals(rec.file_blob, targetStartSec, 4, undefined, {
       highPassHz: 0.5,
       lowPassHz: 45,
       notchHz: 50,
