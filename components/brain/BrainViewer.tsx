@@ -268,7 +268,13 @@ export default function BrainViewer({
     })
       .then((rawTraces) => {
         if (cancelled) return;
-        const mapped = mapEdfTracesToElectrodes(rawTraces);
+        const tracesByChannel = Object.fromEntries(
+          Object.entries(rawTraces).map(([channelId, trace]) => [
+            trace.channel || channelId,
+            trace.signal,
+          ]),
+        );
+        const mapped = mapEdfTracesToElectrodes(tracesByChannel);
         setNodeTraces(mapped);
       })
       .catch(() => {});
