@@ -13,8 +13,8 @@ import {
 } from "recharts";
 import { Panel } from "@/components/layout/panel";
 import { InfoHelp } from "@/components/layout/neuroedge-logo";
-import { DEMO_SCREENING_WEEK } from "@/lib/demo/dashboard-data";
-import { useRecordingCount, usePendingReviewCount } from "@/hooks/use-recording";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/lib/storage/db";
 
 const SERIES = [
   { key: "screenings", label: "Screenings", color: "#42D9F5" },
@@ -23,14 +23,71 @@ const SERIES = [
 ] as const;
 
 export function ScreeningOverviewPanel() {
-  const localRecs = useRecordingCount();
-  const pendingRecs = usePendingReviewCount();
+  const overview = useLiveQuery(async () => {
+    const [recordings, sessions, events] = await Promise.all([
+      db.recordings.toArray(),
+      db.screening_sessions.toArray(),
+      db.detected_events.toArray(),
+    ]);
+
+    const completedSessions = sessions.filter(
+      (session) => session.status === "completed",
+    );
+    const candidateEvents = events.filter(
+      (event) =>
+        event.event_type === "ied_candidate" ||
+        event.event_type === "seizure_candidate",
+    );
+    const awaitingReview = candidateEvents.filter(
+      (event) => event.review_status === "pending" || event.review_status === "uncertain",
+    );
+
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const telemetry = Array.from({ length: 7 }, (_, index) => {
+      const day = new Date(end);
+      day.setDate(end.getDate() - (6 - index));
+      day.setHours(0, 0, 0, 0);
+
+      const nextDay = new Date(day);
+      nextDay.setDate(day.getDate() + 1);
+
+      const countInDay = (dates: Date[]) =>
+        dates.filter((date) => {
+          const timestamp = new Date(date).getTime();
+          return timestamp >= day.getTime() && timestamp < nextDay.getTime();
+        }).length;
+
+      return {
+        day: day.toLocaleDateString(undefined, { weekday: "short" }),
+        screenings: countInDay(
+          completedSessions.map((session) => session.completed_at ?? session.started_at),
+        ),
+        candidates: countInDay(candidateEvents.map((event) => event.created_at)),
+        awaitingReview: countInDay(awaitingReview.map((event) => event.created_at)),
+      };
+    });
+
+    return {
+      recordingCount: recordings.length,
+      screeningCount: completedSessions.length,
+      candidateCount: candidateEvents.length,
+      awaitingReviewCount: awaitingReview.length,
+      telemetry,
+    };
+  }, []);
+
+  const totalRecordings = overview?.recordingCount ?? 0;
+  const totalScreenings = overview?.screeningCount ?? 0;
+  const totalCandidates = overview?.candidateCount ?? 0;
+  const totalAwaitingReview = overview?.awaitingReviewCount ?? 0;
 
   const TOTALS = [
-    { label: "Total recordings", value: (1284 + localRecs).toLocaleString() },
-    { label: "Screenings performed", value: (1117 + localRecs).toLocaleString() },
-    { label: "Candidate events flagged", value: String(86 + pendingRecs) },
-    { label: "Awaiting review", value: String(41 + pendingRecs) },
+    { label: "Total recordings", value: totalRecordings.toLocaleString() },
+    { label: "Screenings performed", value: totalScreenings.toLocaleString() },
+    { label: "Candidate events flagged", value: totalCandidates.toLocaleString() },
+    { label: "Awaiting review", value: totalAwaitingReview.toLocaleString() },
   ];
 
   return (
@@ -66,7 +123,7 @@ export function ScreeningOverviewPanel() {
       <div className="mt-4 h-44 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
-            data={DEMO_SCREENING_WEEK}
+            data={overview?.telemetry ?? []}
             margin={{ top: 8, right: 8, left: -20, bottom: 0 }}
           >
             <defs>
@@ -79,7 +136,11 @@ export function ScreeningOverviewPanel() {
                   x2="0"
                   y2="1"
                 >
-                  <stop offset="0%" stopColor={series.color} stopOpacity={0.3} />
+                  <stop
+                    offset="0%"
+                    stopColor={series.color}
+                    stopOpacity={0.3}
+                  />
                   <stop
                     offset="100%"
                     stopColor={series.color}
@@ -131,4 +192,4 @@ export function ScreeningOverviewPanel() {
       </div>
     </Panel>
   );
-} 
+}

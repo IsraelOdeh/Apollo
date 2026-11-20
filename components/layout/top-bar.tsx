@@ -55,7 +55,7 @@ export function TopBar({ item, online, onOpenNavigation }: TopBarProps) {
         </h1>
       </div>
 
-      <label className="relative hidden w-64 xl:block">
+      {/* <label className="relative hidden w-64 xl:block">
         <span className="sr-only">Global search</span>
         <Search
           className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ne-fg-3"
@@ -66,7 +66,7 @@ export function TopBar({ item, online, onOpenNavigation }: TopBarProps) {
           placeholder="Search recordings, events, IDs"
           className="h-9 w-full rounded-lg border border-ne-line bg-ne-card pl-9 pr-3 text-sm text-ne-fg placeholder:text-ne-fg-3 focus:border-ne-cyan/50 focus:outline-none focus:ring-1 focus:ring-ne-cyan/30"
         />
-      </label>
+      </label> */}
 
       <ConnectionPill online={online} />
 
@@ -74,7 +74,9 @@ export function TopBar({ item, online, onOpenNavigation }: TopBarProps) {
         type="button"
         onClick={() => setTheme(theme === "light" ? "dark" : "light")}
         aria-label="Toggle light and dark theme"
-        title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+        title={
+          theme === "light" ? "Switch to dark mode" : "Switch to light mode"
+        }
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-ne-line text-ne-fg-2 transition-colors hover:bg-ne-hover hover:text-ne-fg"
       >
         {theme === "light" ? (
@@ -84,7 +86,7 @@ export function TopBar({ item, online, onOpenNavigation }: TopBarProps) {
         )}
       </button>
 
-      <NotificationsMenu />
+      {/* <NotificationsMenu /> */}
       <UserMenu />
     </header>
   );
@@ -100,7 +102,7 @@ function ConnectionPill({ online }: { online: boolean }) {
         "flex h-9 shrink-0 items-center gap-2 rounded-full border px-3 font-mono text-[11px] font-semibold tracking-[0.14em]",
         online
           ? "border-ne-emerald/30 bg-ne-emerald/10 text-ne-emerald"
-          : "border-ne-amber/40 bg-ne-amber/15 text-ne-amber"
+          : "border-ne-amber/40 bg-ne-amber/15 text-ne-amber",
       )}
     >
       <span className="relative flex h-2 w-2">
@@ -110,7 +112,7 @@ function ConnectionPill({ online }: { online: boolean }) {
         <span
           className={cn(
             "relative h-2 w-2 rounded-full",
-            online ? "bg-ne-emerald" : "bg-ne-amber"
+            online ? "bg-ne-emerald" : "bg-ne-amber",
           )}
         />
       </span>
@@ -168,7 +170,9 @@ function UserMenu() {
         className="w-56 border-ne-line bg-ne-elevated text-ne-fg"
       >
         <DropdownMenuLabel>
-          <p className="text-sm font-medium">{DEMO_SYSTEM_STATUS.operatorName}</p>
+          <p className="text-sm font-medium">
+            {DEMO_SYSTEM_STATUS.operatorName}
+          </p>
           <p className="text-xs font-normal text-ne-fg-3">
             {DEMO_SYSTEM_STATUS.workstationLabel}
           </p>

@@ -58,12 +58,12 @@ export const PRIMARY_NAV: NavItem[] = [
 ];
 
 export const SECONDARY_NAV: NavItem[] = [
-  {
-    href: "/devices",
-    label: "Device Manager",
-    description: "EEG acquisition hardware connection and streaming.",
-    icon: Cpu,
-  },
+  // {
+  //   href: "/devices",
+  //   label: "Device Manager",
+  //   description: "EEG acquisition hardware connection and streaming.",
+  //   icon: Cpu,
+  // },
   {
     href: "/model",
     label: "Model Information",

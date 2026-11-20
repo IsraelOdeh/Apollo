@@ -41,6 +41,7 @@ import {
 } from "edfcore";
 import {
   db,
+  DetectedEvent,
   type ScreeningSession as DbScreeningSession,
 } from "@/lib/storage/db";
 import { useRecording } from "@/hooks/use-recording";
@@ -276,6 +277,9 @@ export function EegWorkspace() {
   const [zoom, setZoom] = useState(1);
   const [montage, setMontage] = useState("Referential");
   const [pointsToDisplay, setPointsToDisplay] = useState(360);
+  const [selectedEvent, setSelectedEvent] = useState<DetectedEvent | null>(
+    null,
+  );
   const [filters, setFilters] = useState({
     high: true,
     low: true,
@@ -289,7 +293,7 @@ export function EegWorkspace() {
   const [loadingWindow, setLoadingWindow] = useState<boolean>(false);
   const [recording, setRecording] = useState<Recording | null>(null);
   const [screeningHistory, setScreeningHistory] = useState<
-    Array<DbScreeningSession & { eventCount: number }>
+    Array<DbScreeningSession & { eventCount: DetectedEvent[] }>
   >([]);
   const [loadingScreeningHistory, setLoadingScreeningHistory] = useState(false);
   const [signalScreen, setSignalScreen] = useState<
@@ -450,15 +454,19 @@ export function EegWorkspace() {
           .equals(recording.id)
           .sortBy("started_at");
 
+        console.log(sessions);
+
         const history = await Promise.all(
           sessions.reverse().map(async (session) => ({
             ...session,
             eventCount: await db.detected_events
               .where("session_id")
               .equals(session.id)
-              .count(),
+              .toArray(),
           })),
         );
+
+        console.log(history);
 
         if (!cancelled) setScreeningHistory(history);
       } catch (error) {
@@ -475,6 +483,44 @@ export function EegWorkspace() {
       cancelled = true;
     };
   }, [recording]);
+
+  function selectEvent(event: DetectedEvent) {
+    setSelectedEvent(event);
+
+    if (recording) {
+      const eventLength = Math.max(0, event.end_time - event.start_time);
+      const nextDuration =
+        [5, 10, 20, 30, 60].find((option) => option >= eventLength) ?? 60;
+      const maxStart = Math.max(0, recording.duration - nextDuration);
+      const paddedStart = Math.max(0, event.start_time - eventLength * 0.1);
+
+      setDuration(nextDuration);
+      setStartTime(Math.min(paddedStart, maxStart));
+    }
+
+    if (event.channels.length > 0) {
+      const matchingIds = channels
+        .filter(([channelName]) =>
+          event.channels.some(
+            (eventChannel) =>
+              eventChannel.toLowerCase() === channelName.toLowerCase(),
+          ),
+        )
+        .map(([, channelId]) => channelId);
+
+      if (matchingIds.length > 0) {
+        setVisible(
+          channels.reduce<Record<number, boolean>>(
+            (nextVisible, [, channelId]) => ({
+              ...nextVisible,
+              [channelId]: matchingIds.includes(channelId),
+            }),
+            {},
+          ),
+        );
+      }
+    }
+  }
 
   function ReadingPanel() {
     return (
@@ -558,6 +604,34 @@ export function EegWorkspace() {
                       </span>
                     </div>
                     <div className="relative text-ne-cyan">
+                      {selectedEvent &&
+                        (() => {
+                          console.log("Selected event:", selectedEvent);
+                          const eventStart = Math.max(
+                            selectedEvent.start_time,
+                            startTime,
+                          );
+                          const eventEnd = Math.min(
+                            selectedEvent.end_time,
+                            startTime + duration,
+                          );
+
+                          if (eventEnd <= eventStart) return null;
+
+                          const left =
+                            ((eventStart - startTime) / duration) * 100;
+                          const width =
+                            ((eventEnd - eventStart) / duration) * 100;
+
+                          return (
+                            <div
+                              className="pointer-events-none absolute inset-y-0 z-10 rounded-sm border-x border-ne-amber/70 bg-ne-amber/15 bg-ne-amber/25"
+                              style={{ left: `${left}%`, width: `${width}%` }}
+                            >
+                              <span className="absolute left-1 top-1 h-1.5 w-1.5 rounded-full bg-ne-amber" />
+                            </div>
+                          );
+                        })()}
                       <Waveform
                         physicalSignal={entry.signal}
                         color={signalColors[index % signalColors.length]}
@@ -691,6 +765,34 @@ export function EegWorkspace() {
   function ChannelPanel() {
     return (
       <Panel title="Channel selection" eyebrow={`${channels.length} channels`}>
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] text-ne-fg-3">
+          <WorkspaceButton
+            quiet
+            onClick={() =>
+              setVisible({
+                ...visible,
+                ...Object.fromEntries(
+                  channels.map((channel) => [channel[1], true]),
+                ),
+              })
+            }
+          >
+            All
+          </WorkspaceButton>
+          <WorkspaceButton
+            quiet
+            onClick={() =>
+              setVisible({
+                ...visible,
+                ...Object.fromEntries(
+                  channels.map((channel) => [channel[1], false]),
+                ),
+              })
+            }
+          >
+            None
+          </WorkspaceButton>
+        </div>
         <div className="grid grid-cols-2 gap-1.5">
           {channels.map((channel, index) => (
             <button
@@ -745,48 +847,109 @@ export function EegWorkspace() {
         ) : (
           <div className="space-y-3">
             {screeningHistory.map((session) => (
-              <div
+              <details
                 key={session.id}
-                className="rounded-xl border border-ne-line bg-ne-bg2/50 p-4"
+                className="group rounded-xl border border-ne-line bg-ne-bg2/50"
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-ne-fg">
-                      {session.overall_result ?? "Screening in progress"}
-                    </p>
-                    <p className="mt-1 text-[11px] text-ne-fg-3">
-                      {formatScreeningDate(session.started_at)}
-                    </p>
+                <summary className="cursor-pointer list-none p-4 [&::-webkit-details-marker]:hidden">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-ne-fg">
+                        {session.overall_result ?? "Screening in progress"}
+                      </p>
+                      <p className="mt-1 text-[11px] text-ne-fg-3">
+                        {formatScreeningDate(session.started_at)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`rounded-full border px-2 py-1 text-[10px] capitalize ${screeningStatusStyle(session.status)}`}
+                      >
+                        {session.status}
+                      </span>
+                      <ChevronRight className="h-3.5 w-3.5 text-ne-fg-3 transition-transform group-open:rotate-90" />
+                    </div>
                   </div>
-                  <span
-                    className={`rounded-full border px-2 py-1 text-[10px] capitalize ${screeningStatusStyle(session.status)}`}
-                  >
-                    {session.status}
-                  </span>
+                  <div className="mt-3 grid gap-3 border-t border-ne-line pt-3 text-[11px] sm:grid-cols-3">
+                    <div>
+                      <p className="text-ne-fg-3">Model</p>
+                      <p className="mt-1 font-mono text-ne-fg">
+                        {session.model_version}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-ne-fg-3">Events</p>
+                      <p className="mt-1 font-mono text-ne-fg">
+                        {session.eventCount.length}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-ne-fg-3">Inference</p>
+                      <p className="mt-1 font-mono text-ne-fg">
+                        {session.inference_duration == null
+                          ? "—"
+                          : `${(session.inference_duration / 1000).toFixed(1)} s`}
+                      </p>
+                    </div>
+                  </div>
+                </summary>
+
+                <div className="border-t border-ne-line px-4 pb-4 pt-3">
+                  {session.eventCount.length === 0 ? (
+                    <p className="text-[11px] text-ne-fg-3">
+                      No detected events for this session.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
+                      {session.eventCount
+                        .slice()
+                        .sort((a, b) => a.start_time - b.start_time)
+                        .map((event) => (
+                          <button
+                            type="button"
+                            onClick={() => selectEvent(event)}
+                            className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                              selectedEvent?.id === event.id
+                                ? "border-ne-amber/50 bg-ne-amber/10"
+                                : "border-ne-line/70 bg-ne-bg/60 hover:border-ne-cyan/40"
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div>
+                                <p className="text-xs font-medium capitalize text-ne-fg">
+                                  {event.event_type.replaceAll("_", " ")}
+                                </p>
+                                <p className="mt-1 font-mono text-[10px] text-ne-fg-3">
+                                  {formatDuration(event.start_time)} –{" "}
+                                  {formatDuration(event.end_time)}
+                                </p>
+                              </div>
+                              <span className="rounded-full border border-ne-line px-2 py-1 text-[10px] capitalize text-ne-fg-2">
+                                {event.review_status}
+                              </span>
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-ne-fg-3">
+                              <span>
+                                Confidence:{" "}
+                                <span className="font-mono text-ne-fg-2">
+                                  {Math.round(event.confidence * 100)}%
+                                </span>
+                              </span>
+                              {event.channels.length > 0 && (
+                                <span>
+                                  Channels:{" "}
+                                  <span className="font-mono text-ne-fg-2">
+                                    {event.channels.join(", ")}
+                                  </span>
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+                  )}
                 </div>
-                <div className="mt-3 grid gap-3 border-t border-ne-line pt-3 text-[11px] sm:grid-cols-3">
-                  <div>
-                    <p className="text-ne-fg-3">Model</p>
-                    <p className="mt-1 font-mono text-ne-fg">
-                      {session.model_version}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-ne-fg-3">Events</p>
-                    <p className="mt-1 font-mono text-ne-fg">
-                      {session.eventCount}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-ne-fg-3">Inference</p>
-                    <p className="mt-1 font-mono text-ne-fg">
-                      {session.inference_duration == null
-                        ? "—"
-                        : `${(session.inference_duration / 1000).toFixed(1)} s`}
-                    </p>
-                  </div>
-                </div>
-              </div>
+              </details>
             ))}
           </div>
         )}
@@ -841,7 +1004,7 @@ export function EegWorkspace() {
         </div>
       </header>
 
-      {mode === "imported" ? (
+      {mode === "live" ? (
         <>
           <ConnectionPanel />
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_308px] relative">
@@ -890,7 +1053,7 @@ export function EegWorkspace() {
                       <div>
                         <p className="text-ne-fg-3">Sampling frequency</p>
                         <p className="mt-1 font-mono text-ne-fg">
-                          {recording?.sampling_frequency} Hz
+                          {recording?.sampling_rate} Hz
                         </p>
                       </div>
                       <div>
@@ -902,7 +1065,7 @@ export function EegWorkspace() {
                       <div>
                         <p className="text-ne-fg-3">Recording date</p>
                         <p className="mt-1 font-mono text-ne-fg">
-                          {`${recording?.recording_date.year}-${recording?.recording_date.month}-${recording?.recording_date.day}`}
+                          {`${recording?.recording_date?.getFullYear()}-${recording?.recording_date?.getMonth()}-${recording?.recording_date?.getDay()}`}
                         </p>
                       </div>
                     </div>
@@ -951,49 +1114,7 @@ export function EegWorkspace() {
                         }
                       />
                     </div>
-                    <div>
-                      {/* <div className="border-t border-ne-line">
-                  <div className="mb-2 flex items-center justify-between text-xs text-ne-fg-2">
-                    <span className="inline-flex items-center gap-2">
-                      <Gauge className="h-3.5 w-3.5 text-ne-cyan" />
-                      Amplitude gain
-                    </span>
-                    <span className="font-mono text-ne-fg">1.0×</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.5"
-                    max="2"
-                    step="0.1"
-                    defaultValue="1"
-                    className="w-full accent-[#42D9F5]"
-                  />
-                </div> */}
-                      {/* <div>
-                  <div className="mb-2 flex items-center justify-between text-xs text-ne-fg-2">
-                    <span>Time window</span>
-                    <span className="font-mono text-ne-fg">20 sec</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="5"
-                    max="60"
-                    defaultValue="20"
-                    className="w-full accent-[#42D9F5]"
-                  />
-                </div> */}
-                      {/* <label className="flex items-center justify-between gap-3 text-xs text-ne-fg-2">
-                  <span className="inline-flex items-center gap-2">
-                    <Filter className="h-3.5 w-3.5 text-ne-amber" />
-                    Highlight artifacts
-                  </span>
-                  <input
-                    type="checkbox"
-                    defaultChecked
-                    className="h-4 w-4 accent-[#F6BD60]"
-                  />
-                </label> */}
-                    </div>
+                    <div></div>
                     {/* <div className="mt-5 rounded-xl border border-ne-cyan/20 bg-ne-cyan/5 p-3">
                   <p className="flex items-center gap-2 text-xs font-medium text-ne-cyan">
                     <Settings2 className="h-3.5 w-3.5" />

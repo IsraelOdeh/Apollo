@@ -275,23 +275,22 @@ export function RecordingsLibrary() {
             {
               label: "Awaiting review",
               value: String(
-                dbRecordings?.filter((r) => r.review === "Awaiting review")
-                  .length || 0,
+                dbRecordings?.filter(
+                  (r) => r.screening_status === "review_pending",
+                ).length || 0,
               ),
               tone: "text-amber-400",
             },
             {
               label: "Candidate events",
-              value: String(
-                dbRecordings?.filter((r) => r.screening === "Candidate events")
-                  .length || 0,
-              ),
+              value: String(dbRecordings.length || 0),
               tone: "text-sky-400",
             },
             {
               label: "Quality flagged",
               value: String(
-                dbRecordings?.filter((r) => r.quality === "Poor").length || 0,
+                dbRecordings?.filter((r) => r.quality_status === "poor")
+                  .length || 0,
               ),
               tone: "text-rose-400",
             },
