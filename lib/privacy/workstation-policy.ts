@@ -3,7 +3,8 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/storage/db";
-import { EDGE_MODEL } from "@/lib/eeg/edge-screening";
+import rawModelData from "@/lib/eeg/edge_model.json";
+const DEFAULT_THRESHOLD = rawModelData.threshold ?? 0.6902169685778347;
 
 export type ViewRole = "clinician" | "education";
 
@@ -25,12 +26,13 @@ export interface WorkstationPolicy {
 const POLICY_STORAGE_KEY = "ne_workstation_policy_v1";
 const POLICY_EVENT = "ne-policy-change";
 
+
 export const DEFAULT_WORKSTATION_POLICY: WorkstationPolicy = {
   role: "clinician",
   reviewerName: "Research Operator",
   localOnlyMode: true,
   allowResearchExport: false,
-  operatingThreshold: EDGE_MODEL.threshold ?? 0.6902169685778347,
+  operatingThreshold: DEFAULT_THRESHOLD,
   thresholdLabel: "Balanced (0.69)",
 };
 
@@ -130,7 +132,7 @@ export function useWorkstationPolicy() {
 export function formatCalibratedConfidence(
   eventType: string,
   score: number,
-  threshold: number = EDGE_MODEL.threshold,
+  threshold: number = DEFAULT_THRESHOLD,
 ): { label: string; detail: string } {
   if (eventType === "abstain_unreliable") {
     return {

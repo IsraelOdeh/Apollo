@@ -208,9 +208,7 @@ export function BrainDataRepository() {
             never included in this repository export.
           </p>
         </div>
-        <div className="flex items-center gap-2 rounded-full border border-ne-emerald/25 bg-ne-emerald/10 px-3 py-1.5 text-[11px] text-ne-emerald">
-          <ShieldCheck className="h-3.5 w-3.5" /> Governance-safe export
-        </div>
+       
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat value={String(records.length)} label="Total recordings stored locally" />

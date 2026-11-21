@@ -49,12 +49,20 @@ import { Recording } from "@/lib/storage/types";
 import { add } from "dexie";
 import { Slider } from "@radix-ui/react-slider";
 import { read } from "node:fs";
-import linspace from "@stdlib/array/linspace";
 import { readDisplaySignals } from "@/lib/eeg/edge-screening";
 import { ConnectionPanel } from "./device-manager";
 import { useRouter } from "next/navigation";
 
 const signalColors = ["#42D9F5", "#36E0A1", "#9D85FF", "#F6BD60"];
+
+
+
+// Add this helper right below your imports:
+function linspace(start: number, end: number, count: number): number[] {
+  if (count <= 1) return [start];
+  const step = (end - start) / (count - 1);
+  return Array.from({ length: count }, (_, i) => start + i * step);
+}
 
 function formatDuration(seconds: number) {
   const totalMilliseconds = Math.max(0, Math.round(seconds * 1000));
