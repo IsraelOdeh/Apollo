@@ -4,12 +4,15 @@
 import Link from "next/link";
 import {
   Bell,
+  BookOpen,
+  Cpu,
+  Lock,
   Menu,
   Moon,
   Search,
   Settings as SettingsIcon,
+  Stethoscope,
   Sun,
-  Cpu,
   Wifi,
   WifiOff,
 } from "lucide-react";
@@ -21,10 +24,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { DEMO_SYSTEM_STATUS } from "@/lib/demo/system-status";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "./nav-items";
 import { useThemeMode } from "./neuroedge-logo";
+import { useWorkstationPolicy } from "@/lib/privacy/workstation-policy";
 
 type TopBarProps = {
   item: NavItem;
@@ -34,6 +37,7 @@ type TopBarProps = {
 
 export function TopBar({ item, online, onOpenNavigation }: TopBarProps) {
   const { theme, setTheme } = useThemeMode();
+  const { policy } = useWorkstationPolicy();
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-ne-line bg-ne-bg/85 px-4 backdrop-blur-xl md:px-6 lg:px-8">
@@ -67,6 +71,18 @@ export function TopBar({ item, online, onOpenNavigation }: TopBarProps) {
           className="h-9 w-full rounded-lg border border-ne-line bg-ne-card pl-9 pr-3 text-sm text-ne-fg placeholder:text-ne-fg-3 focus:border-ne-cyan/50 focus:outline-none focus:ring-1 focus:ring-ne-cyan/30"
         />
       </label> */}
+
+      {/* Privacy-by-default verification pill */}
+      {policy.localOnlyMode && (
+        <Link
+          href="/settings"
+          title="Local-only mode active: zero raw EEG data leaves this browser"
+          className="hidden h-9 shrink-0 items-center gap-1.5 rounded-full border border-ne-cyan/30 bg-ne-cyan/10 px-3 font-mono text-[10px] font-semibold tracking-[0.12em] text-ne-cyan transition-colors hover:bg-ne-cyan/20 sm:flex"
+        >
+          <Lock className="h-3 w-3" aria-hidden="true" />
+          <span>LOCAL-ONLY</span>
+        </Link>
+      )}
 
       <ConnectionPill online={online} />
 
@@ -149,6 +165,9 @@ function NotificationsMenu() {
 }
 
 function UserMenu() {
+  const { policy, updatePolicy } = useWorkstationPolicy();
+  const isEducation = policy.role === "education";
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -158,33 +177,47 @@ function UserMenu() {
           className="flex h-9 shrink-0 items-center gap-2 rounded-full border border-ne-line bg-ne-card pl-1 pr-3 text-sm text-ne-fg-2 transition-colors hover:bg-ne-hover hover:text-ne-fg"
         >
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ne-elevated font-mono text-[11px] text-ne-fg">
-            NE
+            {isEducation ? "ED" : "CL"}
           </span>
-          <span className="hidden md:inline">
-            {DEMO_SYSTEM_STATUS.operatorName}
-          </span>
+          <span className="hidden md:inline">{policy.reviewerName}</span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        className="w-56 border-ne-line bg-ne-elevated text-ne-fg"
+        className="w-60 border-ne-line bg-ne-elevated text-ne-fg"
       >
         <DropdownMenuLabel>
-          <p className="text-sm font-medium">
-            {DEMO_SYSTEM_STATUS.operatorName}
-          </p>
+          <p className="text-sm font-medium">{policy.reviewerName}</p>
           <p className="text-xs font-normal text-ne-fg-3">
-            {DEMO_SYSTEM_STATUS.workstationLabel}
+            {isEducation ? "Caregiver / Education view" : "Clinician review view"}
           </p>
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-ne-line" />
+        <DropdownMenuItem
+          onClick={() =>
+            updatePolicy({ role: isEducation ? "clinician" : "education" })
+          }
+          className="cursor-pointer focus:bg-ne-hover focus:text-ne-fg"
+        >
+          {isEducation ? (
+            <>
+              <Stethoscope className="mr-2 h-4 w-4 text-ne-emerald" />
+              Switch to Clinician view
+            </>
+          ) : (
+            <>
+              <BookOpen className="mr-2 h-4 w-4 text-ne-cyan" />
+              Switch to Education view
+            </>
+          )}
+        </DropdownMenuItem>
         <DropdownMenuItem
           asChild
           className="cursor-pointer focus:bg-ne-hover focus:text-ne-fg"
         >
           <Link href="/settings">
             <SettingsIcon className="mr-2 h-4 w-4" aria-hidden="true" />
-            Settings
+            Settings &amp; Privacy
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem

@@ -1,8 +1,8 @@
+// components/neuroedge/reports-page.tsx
 "use client";
 
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/storage/db";
 import {
   Activity,
   BadgeCheck,
@@ -14,8 +14,12 @@ import {
   Filter,
   Gauge,
   History,
+  Lock,
+  ShieldCheck,
   SlidersHorizontal,
+  X,
 } from "lucide-react";
+import { db } from "@/lib/storage/db";
 import { Panel } from "@/components/layout/panel";
 
 type ReportRow = {
@@ -52,8 +56,13 @@ function ActionButton({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${quiet ? "border-ne-line bg-ne-bg2 text-ne-fg-2 hover:text-ne-fg" : "border-ne-emerald/30 bg-ne-emerald/10 text-ne-emerald hover:bg-ne-emerald/20"}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+        quiet
+          ? "border-ne-line bg-ne-bg2 text-ne-fg-2 hover:text-ne-fg"
+          : "border-ne-emerald/30 bg-ne-emerald/10 text-ne-emerald hover:bg-ne-emerald/20"
+      }`}
     >
       {children}
     </button>
@@ -61,6 +70,7 @@ function ActionButton({
 }
 
 export function ReportsPage() {
+  // Live IndexedDB aggregation across local recordings, sessions, events, and clinician annotations
   const reportData = useLiveQuery(async () => {
     const [recordings, sessions, events, annotations] = await Promise.all([
       db.recordings.toArray(),
@@ -125,6 +135,9 @@ export function ReportsPage() {
     const artifactEvents = events.filter(
       (event) => event.event_type === "artifact",
     );
+    const abstainEvents = events.filter(
+      (event) => event.event_type === "abstain_unreliable",
+    );
     const reviewEvents = events.filter(
       (event) =>
         event.review_status === "pending" ||
@@ -159,13 +172,17 @@ export function ReportsPage() {
           eventIds.has(annotation.event_id),
         );
         const findingCount = recordingEvents.filter(
-          (event) => event.event_type !== "artifact",
+          (event) =>
+            event.event_type !== "artifact" &&
+            event.event_type !== "abstain_unreliable",
         ).length;
 
         return {
           id: recording.id,
           finding: `Candidates × ${findingCount}`,
-          note: `${recordingAnnotations.length} annotation${recordingAnnotations.length === 1 ? "" : "s"}`,
+          note: `${recordingAnnotations.length} annotation${
+            recordingAnnotations.length === 1 ? "" : "s"
+          }`,
           status:
             recordingAnnotations.length === 0
               ? "Pending"
@@ -180,12 +197,18 @@ export function ReportsPage() {
         (row) => row.status !== "Pending" || row.finding !== "Candidates × 0",
       );
 
+    const latestSortedSessions = [...sessions].sort(
+      (a, b) =>
+        new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),
+    );
+
     return {
       rows: sessionRows,
       annotationRows,
       sessions: completedSessions.length,
       candidates: candidateEvents.length,
       artifacts: artifactEvents.length,
+      abstained: abstainEvents.length,
       reviewNeeded: reviewEvents.length,
       annotations: annotations.length,
       qualityCounts,
@@ -198,16 +221,8 @@ export function ReportsPage() {
       uncertainAnnotations: annotations.filter(
         (annotation) => annotation.annotation_type === "uncertain",
       ).length,
-      modelVersion:
-        [...sessions].sort(
-          (a, b) =>
-            new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),
-        )[0]?.model_version ?? "No model run",
-      pipelineConfig:
-        [...sessions].sort(
-          (a, b) =>
-            new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),
-        )[0]?.preprocessing_config ?? {},
+      modelVersion: latestSortedSessions[0]?.model_version ?? "No model run",
+      pipelineConfig: latestSortedSessions[0]?.preprocessing_config ?? {},
       goodQualityPercent:
         recordings.length === 0
           ? 0
@@ -223,6 +238,10 @@ export function ReportsPage() {
 
   const [range, setRange] = useState("Last 30 days");
   const [qualityFilter, setQualityFilter] = useState("All quality");
+  const [pendingExport, setPendingExport] = useState<"csv" | "pdf" | null>(
+    null,
+  );
+
   const rows = reportData?.rows ?? [];
   const filtered = useMemo(() => {
     const cutoff =
@@ -238,35 +257,46 @@ export function ReportsPage() {
         (qualityFilter === "All quality" || row.quality === qualityFilter),
     );
   }, [qualityFilter, range, rows]);
+
   const candidateCount = reportData?.candidates ?? 0;
   const pipelineConfig = (reportData?.pipelineConfig ?? {}) as Record<
     string,
     unknown
   >;
   const artifactCount = reportData?.artifacts ?? 0;
+  const abstainedCount = reportData?.abstained ?? 0;
   const reviewCount = reportData?.reviewNeeded ?? 0;
-  const distributionTotal = candidateCount + artifactCount + reviewCount;
+  const distributionTotal =
+    candidateCount + artifactCount + abstainedCount + reviewCount;
+
   const distribution = [
     {
-      name: "Candidate IED",
+      name: "Candidate events",
       count: candidateCount,
       color: "bg-ne-ai",
-      note: "Model-generated",
+      note: "Seizure / IED",
     },
     {
-      name: "Artifact",
+      name: "Abstained (unreliable)",
+      count: abstainedCount,
+      color: "bg-rose-400",
+      note: "Poor contact / ambiguous",
+    },
+    {
+      name: "Artifact gated",
       count: artifactCount,
       color: "bg-ne-amber",
-      note: "Signal quality",
+      note: "Ocular / EMG",
     },
     {
-      name: "Review needed",
+      name: "Review pending",
       count: reviewCount,
       color: "bg-ne-cyan",
-      note: "Unresolved",
+      note: "Awaiting reviewer",
     },
   ];
 
+  // Build pseudonymous CSV payload (excludes raw waveforms and patient identifiers)
   const csv = useMemo(() => {
     const header = [
       "recording_id",
@@ -281,7 +311,7 @@ export function ReportsPage() {
       ...filtered.map((row) =>
         [
           row.id,
-          row.date,
+          `"${row.date}"`,
           row.screened,
           row.candidates,
           row.quality,
@@ -290,6 +320,7 @@ export function ReportsPage() {
       ),
     ].join("\n");
   }, [filtered]);
+
   const exportCsv = () => {
     const url = URL.createObjectURL(
       new Blob([csv], { type: "text/csv;charset=utf-8" }),
@@ -301,8 +332,19 @@ export function ReportsPage() {
     URL.revokeObjectURL(url);
   };
 
+  // Executes export only after explicit operator review of included vs. excluded fields
+  const confirmExport = () => {
+    if (pendingExport === "csv") {
+      exportCsv();
+    } else if (pendingExport === "pdf") {
+      window.print();
+    }
+    setPendingExport(null);
+  };
+
   return (
     <div className="space-y-5 pb-4">
+      {/* Period Selector & Export Controls */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ne-line bg-ne-card/70 p-3">
         <div className="flex flex-wrap items-center gap-2 text-xs text-ne-fg-2">
           <span className="font-mono uppercase tracking-wider text-ne-fg-3">
@@ -327,17 +369,81 @@ export function ReportsPage() {
           </span>
         </div>
         <div className="flex gap-2">
-          <ActionButton quiet onClick={() => window.print()}>
+          <ActionButton quiet onClick={() => setPendingExport("pdf")}>
             <FileText className="size-3.5" />
             Export PDF
           </ActionButton>
-          <ActionButton onClick={exportCsv}>
+          <ActionButton onClick={() => setPendingExport("csv")}>
             <FileSpreadsheet className="size-3.5" />
             Export CSV
           </ActionButton>
         </div>
       </div>
 
+      {/* Pre-Export Derived-Artefact Privacy Review */}
+      {pendingExport && (
+        <div
+          role="dialog"
+          aria-label="Pre-export privacy review"
+          className="rounded-xl border border-ne-cyan/40 bg-ne-card p-4 shadow-lg"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-ne-fg">
+              <ShieldCheck className="size-4 text-ne-cyan" />
+              Pre-export artefact review ({pendingExport.toUpperCase()})
+            </div>
+            <button
+              type="button"
+              onClick={() => setPendingExport(null)}
+              className="rounded p-1 text-ne-fg-3 hover:text-ne-fg"
+              aria-label="Cancel export"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+          <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
+            <div className="rounded-lg border border-ne-line bg-ne-bg2 p-3">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-ne-emerald">
+                Included in export ({filtered.length} session row
+                {filtered.length === 1 ? "" : "s"})
+              </p>
+              <ul className="mt-1.5 list-disc space-y-1 pl-4 text-ne-fg-2">
+                <li>Pseudonymous session ID &amp; recording date</li>
+                <li>Screened segment count &amp; signal quality tier</li>
+                <li>Model candidate counts &amp; clinician review totals</li>
+              </ul>
+            </div>
+            <div className="rounded-lg border border-ne-line bg-ne-bg2 p-3">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-ne-cyan">
+                Excluded from export
+              </p>
+              <ul className="mt-1.5 list-disc space-y-1 pl-4 text-ne-fg-2">
+                <li>Raw EDF / EDF+ waveform traces</li>
+                <li>Patient names, contact info, or hospital IDs</li>
+                <li>Hardware serial numbers or browser metadata</li>
+              </ul>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="flex items-center gap-1.5 text-[11px] text-ne-fg-3">
+              <Lock className="size-3.5 text-ne-amber" />
+              Derived EEG outputs retain a traceable neural origin — share only
+              with authorized recipients.
+            </p>
+            <div className="flex gap-2">
+              <ActionButton quiet onClick={() => setPendingExport(null)}>
+                Cancel
+              </ActionButton>
+              <ActionButton onClick={confirmExport}>
+                <Download className="size-3.5" />
+                Confirm {pendingExport.toUpperCase()} export
+              </ActionButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Top KPI Strip */}
       <section
         aria-label="Screening summary"
         className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
@@ -353,7 +459,7 @@ export function ReportsPage() {
           {
             label: "Model candidates",
             value: String(candidateCount),
-            sub: "Require human review",
+            sub: "Require clinician review",
             icon: CircleAlert,
             tone: "text-ne-ai",
           },
@@ -388,13 +494,14 @@ export function ReportsPage() {
         ))}
       </section>
 
+      {/* Summary & Distribution */}
       <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
         <Panel
           title="Screening summary"
           eyebrow={`Model output · ${reportData?.sessions ?? 0} sessions`}
           actions={
             <span className="rounded-full border border-ne-ai/20 bg-ne-ai/10 px-2.5 py-1 font-mono text-[10px] text-ne-ai">
-              MODEL FINDINGS
+              TRIAGE ESTIMATES
             </span>
           }
         >
@@ -404,12 +511,12 @@ export function ReportsPage() {
               [
                 String(reportData?.sessionsWithCandidates ?? 0),
                 "Sessions with candidates",
-                "Model flagged",
+                "Flagged for review",
               ],
               [
                 String(reportData?.annotations ?? 0),
                 "Human annotations",
-                "Reviewed separately",
+                "Recorded separately",
               ],
             ].map(([value, label, detail]) => (
               <div
@@ -422,31 +529,27 @@ export function ReportsPage() {
               </div>
             ))}
           </div>
-          <div className="mt-4 flex items-start gap-2 rounded-lg border border-ne-amber/20 bg-ne-amber/5 p-3 text-[11px] leading-5 text-ne-fg-2">
-            <CircleAlert className="mt-0.5 size-4 shrink-0 text-ne-amber" />
-            <p>
-              Screening candidates are model-generated findings, not diagnoses.
-              A model result with no candidate does not rule out epilepsy;
-              clinical interpretation remains with qualified reviewers.
-            </p>
-          </div>
         </Panel>
 
         <Panel
-          title="Candidate event distribution"
-          eyebrow={`${distributionTotal} total · model-generated`}
+          title="Event distribution"
+          eyebrow={`${distributionTotal} total · including abstentions`}
         >
           <div
             className="flex h-3 overflow-hidden rounded-full bg-ne-elevated"
             role="img"
-            aria-label={`Event distribution: ${candidateCount} candidate IED, ${artifactCount} artifact, ${reviewCount} requiring review`}
+            aria-label={`Event distribution: ${candidateCount} candidates, ${abstainedCount} abstained, ${artifactCount} artifacts, ${reviewCount} pending`}
           >
             {distribution.map((item) => (
               <div
                 key={item.name}
                 className={item.color}
                 style={{
-                  width: `${distributionTotal === 0 ? 0 : (item.count / distributionTotal) * 100}%`,
+                  width: `${
+                    distributionTotal === 0
+                      ? 0
+                      : (item.count / distributionTotal) * 100
+                  }%`,
                 }}
               />
             ))}
@@ -478,6 +581,7 @@ export function ReportsPage() {
         </Panel>
       </div>
 
+      {/* Quality & Clinician Review Breakdown */}
       <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
         <Panel title="Recording quality summary" eyebrow="Signal integrity">
           <div className="grid grid-cols-3 gap-2">
@@ -511,7 +615,11 @@ export function ReportsPage() {
                   <div
                     className={`h-full ${bar}`}
                     style={{
-                      width: `${rows.length === 0 ? 0 : (Number(value) / rows.length) * 100}%`,
+                      width: `${
+                        rows.length === 0
+                          ? 0
+                          : (Number(value) / rows.length) * 100
+                      }%`,
                     }}
                   />
                 </div>
@@ -519,42 +627,36 @@ export function ReportsPage() {
             ))}
           </div>
           <p className="mt-3 text-[10px] leading-4 text-ne-fg-3">
-            Quality reflects signal usability for screening and may limit
-            confidence. It is not a clinical severity measure.
+            Quality reflects scalp electrode contact and artifact ratio during
+            local screening.
           </p>
         </Panel>
 
         <Panel
-          title="Model performance metrics"
-          eyebrow={`Local review cohort · ${reportData?.modelVersion ?? "No model run"}`}
-          actions={
-            <span className="inline-flex items-center gap-1 text-[10px] text-ne-emerald">
-              <span className="size-1.5 rounded-full bg-ne-emerald" />
-              Validation snapshot
-            </span>
-          }
+          title="Clinician review metrics"
+          eyebrow={`Local review activity · ${reportData?.modelVersion ?? "No model run"}`}
         >
           <div className="grid grid-cols-2 gap-3">
             {[
               [
                 "Accepted",
                 String(reportData?.acceptedAnnotations ?? 0),
-                "Human annotations",
+                "Confirmed events",
               ],
               [
                 "Rejected",
                 String(reportData?.rejectedAnnotations ?? 0),
-                "Human annotations",
+                "Dismissed flags",
               ],
               [
                 "Uncertain",
                 String(reportData?.uncertainAnnotations ?? 0),
-                "Human annotations",
+                "Needs follow-up",
               ],
               [
                 "Annotations",
                 String(reportData?.annotations ?? 0),
-                "Recorded total",
+                "Total logged",
               ],
             ].map(([label, value, detail]) => (
               <div
@@ -569,13 +671,10 @@ export function ReportsPage() {
               </div>
             ))}
           </div>
-          <p className="mt-3 text-[10px] leading-4 text-ne-fg-3">
-            These values summarize local human review activity. They are not
-            diagnostic validation metrics or an estimate of model performance.
-          </p>
         </Panel>
       </div>
 
+      {/* Pipeline Parameters & Annotation Audit Trail */}
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Panel
           title="Signal-processing configuration"
@@ -612,12 +711,10 @@ export function ReportsPage() {
                 ),
               ],
               [
-                "Window",
-                String(
-                  pipelineConfig.windowSeconds
-                    ? `${pipelineConfig.windowSeconds} seconds`
-                    : "Recording native",
-                ),
+                "Threshold",
+                pipelineConfig.threshold != null
+                  ? Number(pipelineConfig.threshold).toFixed(2)
+                  : "0.69",
               ],
             ].map(([key, value]) => (
               <div
@@ -632,8 +729,7 @@ export function ReportsPage() {
             ))}
           </div>
           <p className="mt-3 text-[10px] text-ne-fg-3">
-            Configuration describes the screening pipeline; imported source
-            recordings remain unchanged.
+            Source EDF files remain unmodified in local browser storage.
           </p>
         </Panel>
 
@@ -652,7 +748,7 @@ export function ReportsPage() {
               <thead>
                 <tr className="border-b border-ne-line text-[9px] uppercase tracking-wider text-ne-fg-3">
                   <th className="pb-2 font-medium">Recording</th>
-                  <th className="pb-2 font-medium">Model finding</th>
+                  <th className="pb-2 font-medium">Model estimate</th>
                   <th className="pb-2 font-medium">Human annotation</th>
                   <th className="pb-2 text-right font-medium">Status</th>
                 </tr>
@@ -674,7 +770,11 @@ export function ReportsPage() {
                     </td>
                     <td className="py-3 text-right">
                       <span
-                        className={`rounded-full px-2 py-1 text-[9px] ${row.status === "Reviewed" ? "bg-ne-emerald/10 text-ne-emerald" : "bg-ne-amber/10 text-ne-amber"}`}
+                        className={`rounded-full px-2 py-1 text-[9px] ${
+                          row.status === "Reviewed"
+                            ? "bg-ne-emerald/10 text-ne-emerald"
+                            : "bg-ne-amber/10 text-ne-amber"
+                        }`}
                       >
                         {row.status}
                       </span>
@@ -686,13 +786,14 @@ export function ReportsPage() {
           </div>
           <div className="mt-3 flex items-center gap-2 text-[10px] text-ne-fg-3">
             <ChartNoAxesColumn className="size-3.5 text-ne-ai" />
-            <span>Model-generated findings</span>
+            <span>Model estimates</span>
             <span className="ml-2 size-1 rounded-full bg-ne-emerald" />
-            <span>Human-reviewed annotations are recorded separately</span>
+            <span>Human annotations stored separately</span>
           </div>
         </Panel>
       </div>
 
+      {/* Session Records Table */}
       <Panel
         title="Screening session records"
         eyebrow={`${filtered.length} pseudonymous sessions`}
@@ -747,7 +848,13 @@ export function ReportsPage() {
                   </td>
                   <td className="py-3 text-right">
                     <span
-                      className={`rounded-full px-2 py-1 text-[9px] ${row.quality === "Good" ? "bg-ne-emerald/10 text-ne-emerald" : row.quality === "Fair" ? "bg-ne-amber/10 text-ne-amber" : "bg-ne-critical/10 text-ne-critical"}`}
+                      className={`rounded-full px-2 py-1 text-[9px] ${
+                        row.quality === "Good"
+                          ? "bg-ne-emerald/10 text-ne-emerald"
+                          : row.quality === "Fair"
+                            ? "bg-ne-amber/10 text-ne-amber"
+                            : "bg-ne-critical/10 text-ne-critical"
+                      }`}
                     >
                       {row.quality}
                     </span>
@@ -761,11 +868,6 @@ export function ReportsPage() {
           </table>
         </div>
       </Panel>
-      <p className="px-1 text-[10px] leading-5 text-ne-fg-3">
-        Research demo summary using pseudonymous recording identifiers.
-        Screening outputs are decision support only and must not be treated as
-        confirmed clinical interpretations.
-      </p>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import {
   type ScreeningSession,
   type DetectedEvent,
 } from "@/lib/storage/db";
+import { getWorkstationPolicy } from "@/lib/privacy/workstation-policy";
 import rawModelData from "./edge_model.json";
 
 export interface EdgeModelSpec {
@@ -39,9 +40,9 @@ export const EDGE_MODEL = rawModelData as EdgeModelSpec;
 
 const TARGET_FS = 256;
 const WIN_SEC = 2;
-const WIN_SAMPLES = WIN_SEC * TARGET_FS; // 512 samples
+const WIN_SAMPLES = WIN_SEC * TARGET_FS; // 512 samples per 2-second epoch
 
-// Daubechies-4 (db4) 8-tap decomposition filters
+// Daubechies-4 (db4) 8-tap decomposition filter coefficients
 const LO_D = [
   -0.010597401785, 0.032883011667, 0.030841381836, -0.187034811719,
   -0.027983769417, 0.63088076793, 0.714846570553, 0.230377813309,
@@ -51,6 +52,7 @@ const HI_D = [
   0.187034811719, 0.030841381836, -0.032883011667, -0.010597401785,
 ];
 
+// Non-EEG auxiliary channels excluded from cortical feature extraction
 const NON_EEG_TOKENS = [
   "EDF ANNOTATIONS",
   "ANNOTATION",
@@ -75,7 +77,8 @@ export interface ChannelMasks {
 }
 
 /**
- * Computes accurate total duration in seconds from an EDF header and file size.
+ * Computes total recording duration in seconds from EDF header metadata,
+ * falling back to byte-size estimation when numDataRecords is omitted.
  */
 export function getEdfTotalDurationSeconds(
   edfFile: any,
@@ -121,7 +124,8 @@ export function getEdfTotalDurationSeconds(
 }
 
 /**
- * Builds spatial channel masks (Frontal, Posterior, Left, Right) from 10-20 labels.
+ * Builds spatial channel masks (Frontal, Posterior, Left, Right) from 10-20 labels
+ * for ocular blink-ratio gating and hemispheric asymmetry computation.
  */
 export function buildChannelMasks(channelLabels: string[]): ChannelMasks {
   const upper = channelLabels.map((c) => c.toUpperCase());
@@ -137,7 +141,7 @@ export function buildChannelMasks(channelLabels: string[]): ChannelMasks {
 }
 
 /**
- * Second-order zero-phase (forward-backward) biquad filter for EEG preprocessing.
+ * Zero-phase (forward-backward) second-order biquad IIR filter.
  */
 function applyBiquadZeroPhase(
   signal: Float64Array,
@@ -224,6 +228,9 @@ function designLowPassBiquad(fc: number, fs: number) {
   };
 }
 
+/**
+ * Applies optional powerline notch, high-pass, and low-pass filters at 256 Hz.
+ */
 export function filterChannel256Hz(
   raw: Float64Array,
   opts: {
@@ -253,7 +260,7 @@ export function filterChannel256Hz(
 }
 
 /**
- * Resamples an arbitrary 1D signal to 256 Hz.
+ * Resamples a 1D channel trace to 256 Hz using fast decimation (512 Hz) or linear interpolation.
  */
 function resampleTo256Hz(
   input: Float64Array,
@@ -333,7 +340,7 @@ function fft512(real: Float64Array, imag: Float64Array): void {
 }
 
 /**
- * Single-level DWT 'same' convolution followed by dyadic decimation (0-based 0:2:end, matching MATLAB 1:2:end).
+ * Single-level DWT 'same' convolution followed by dyadic decimation (0-based 0:2:end).
  */
 function dwtConvSameDecimate(x: Float64Array, filter: number[]): Float64Array {
   const L = x.length;
@@ -361,7 +368,8 @@ function sumSquares(arr: Float64Array): number {
 }
 
 /**
- * 5-level Daubechies-4 DWT relative sub-band power decomposition.
+ * 5-level Daubechies-4 DWT relative sub-band power decomposition
+ * (Delta, Theta, Alpha, Beta, Gamma).
  */
 function computeDWTdb4Bands1D(
   seg: Float64Array,
@@ -407,7 +415,7 @@ function sampleVariance(arr: Float64Array): number {
 }
 
 /**
- * Extracts the exact 28 raw features for a 2-second (512-sample) multichannel window.
+ * Extracts the exact 28 channel-agnostic DSP features for a 2-second (512-sample) window.
  */
 export function extract28Features(
   channelsSeg: Float64Array[],
@@ -423,7 +431,7 @@ export function extract28Features(
   const rawTkeoArr = new Array<number>(numCh).fill(0);
   const rmsArr = new Array<number>(numCh).fill(0);
 
-  const log2Denom = Math.log2(80); // 80 bins between 0.5 Hz and 40.0 Hz at 256 Hz / 512 N
+  const log2Denom = Math.log2(80); // 80 FFT bins covering 0.5–40.0 Hz
 
   for (let c = 0; c < numCh; c++) {
     const seg = channelsSeg[c];
@@ -503,6 +511,7 @@ export function extract28Features(
     chMat[11][c] = dwtGamma;
   }
 
+  // Aggregate max and mean across all active EEG channels
   const max12 = new Array<number>(12);
   const mean12 = new Array<number>(12);
   for (let m = 0; m < 12; m++) {
@@ -562,9 +571,9 @@ export function extract28Features(
 }
 
 /**
- * Runs the MLP forward pass from edge_model.json:
- * 1. log1p on log1pFeatures
- * 2. (x - mean) / std
+ * Runs the 3-layer MLP forward pass defined in edge_model.json:
+ * 1. log1p on skewed features
+ * 2. z-score standardization (x - mean) / std
  * 3. Hidden layers with ReLU
  * 4. Output layer with Softmax -> [probNonSeizure, probSeizure]
  */
@@ -614,7 +623,7 @@ export function predictEdgeModelProbs(
 }
 
 /**
- * Reads physical signal traces for the EEG Workspace display viewer.
+ * Reads physical signal traces from a local EDF blob for display in EEG Workspace and BrainViewer.
  */
 export async function readDisplaySignals(
   fileBlob: Blob,
@@ -632,11 +641,6 @@ export async function readDisplaySignals(
     { channelId: number; channel: string; signal: number[]; amplitude: number }
   >
 > {
-  console.log(
-    `Reading display signals: start=${startSec}s, dur=${durationSec}s, filter=`,
-    filterOpts,
-  );
-
   const edfFile = await openEdf(blobSource(fileBlob as File));
   const totalSec = getEdfTotalDurationSeconds(edfFile, fileBlob.size);
   const clampedStart = Math.max(
@@ -684,7 +688,7 @@ export async function readDisplaySignals(
       offset += p.length;
     }
 
-    // Remove DC mean & apply display filters
+    // Remove DC offset and apply display filters
     let mean = 0;
     for (let i = 0; i < combined.length; i++) mean += combined[i];
     mean /= combined.length;
@@ -697,19 +701,28 @@ export async function readDisplaySignals(
     );
     const filtered = filterChannel256Hz(resampled, filterOpts);
 
-    const amplitude = (Math.max(...filtered) - Math.min(...filtered)) / 2;
+    let minVal = Infinity;
+    let maxVal = -Infinity;
+    for (let i = 0; i < filtered.length; i++) {
+      const v = filtered[i];
+      if (v < minVal) minVal = v;
+      if (v > maxVal) maxVal = v;
+    }
+    const amplitude = Number.isFinite(maxVal - minVal)
+      ? (maxVal - minVal) / 2
+      : 0;
 
-    // Downsample display points for crisp SVG rendering
-    pointsCount = pointsCount
+    // Downsample trace points for SVG waveform rendering
+    const targetPoints = pointsCount
       ? Math.min(pointsCount, filtered.length)
-      : (pointsCount = filtered.length);
-
-    const step = Math.max(1, Math.floor(filtered.length / pointsCount));
+      : filtered.length;
+    const step = Math.max(1, Math.floor(filtered.length / targetPoints));
     const downsampled: number[] = [];
-    for (let i = 0; i < pointsCount; i++) {
+    for (let i = 0; i < targetPoints; i++) {
       const idx = Math.min(filtered.length - 1, i * step);
       downsampled.push(filtered[idx]);
     }
+
     result[sigHeader.index] = {
       channelId: sigHeader.index,
       channel: sigHeader.label,
@@ -722,8 +735,8 @@ export async function readDisplaySignals(
 }
 
 /**
- * Full end-to-end screening pipeline on an uploaded EDF Recording using edge_model.json.
- * Saves the ScreeningSession and DetectedEvents to IndexedDB.
+ * Full on-device EDF screening pipeline using edge_model.json.
+ * Persists the ScreeningSession and DetectedEvents locally to IndexedDB.
  */
 export async function runEdgeScreeningOnRecording(
   recording: Recording,
@@ -731,6 +744,12 @@ export async function runEdgeScreeningOnRecording(
 ): Promise<{ session: ScreeningSession; events: DetectedEvent[] }> {
   const startTimeMs = performance.now();
   const sessionId = crypto.randomUUID();
+
+  // Resolve operating threshold from user workstation policy (defaults to edge_model.json)
+  const activePolicy = getWorkstationPolicy();
+  const smoothWin = EDGE_MODEL.smoothing?.windows ?? 5;
+  const threshold =
+    activePolicy.operatingThreshold || EDGE_MODEL.threshold || 0.6902169685778347;
 
   const session: ScreeningSession = {
     id: sessionId,
@@ -744,8 +763,8 @@ export async function runEdgeScreeningOnRecording(
       highPassHz: 0.5,
       lowPassHz: 45,
       notchHz: 50,
-      smoothingWindows: EDGE_MODEL.smoothing?.windows ?? 5,
-      threshold: EDGE_MODEL.threshold,
+      smoothingWindows: smoothWin,
+      threshold,
     },
     status: "processing",
   };
@@ -761,7 +780,7 @@ export async function runEdgeScreeningOnRecording(
     getEdfTotalDurationSeconds(edfFile, recording.file_blob.size),
   );
 
-  // Filter valid EEG signals
+  // Filter valid cortical EEG channels
   const allSignals = Array.from(edfFile.header.signals ?? []);
   let eegSignals = allSignals.filter((s) => {
     const lbl = String(s.label || "")
@@ -785,27 +804,29 @@ export async function runEdgeScreeningOnRecording(
   const isReferential = eegLabels.every((lbl) => !lbl.includes("-"));
   const masks = buildChannelMasks(eegLabels);
 
-  // Read and scan in 60-second chunks so large recordings stay fast & memory-safe
+  // Process in 60-second chunks so large EDF files stay memory-safe in the browser
   const CHUNK_SEC = 60;
-  // Cap scan to up to 30 minutes (1800s) for instant UX, or full length if shorter
   const maxScanSec = Math.min(totalSec, 1800);
   const numChunks = Math.ceil(maxScanSec / CHUNK_SEC);
 
   let baseTKEO = 0;
   const trailingScores: number[] = [];
-  const smoothWin = EDGE_MODEL.smoothing?.windows ?? 5;
-  const threshold = EDGE_MODEL.threshold ?? 0.6902169685778347;
 
   type RawDetection = {
     startSec: number;
     endSec: number;
-    type: "seizure_candidate" | "ied_candidate" | "artifact";
+    type:
+      | "seizure_candidate"
+      | "ied_candidate"
+      | "artifact"
+      | "abstain_unreliable";
     confidence: number;
     channels: string[];
   };
 
   const windowDetections: RawDetection[] = [];
   let artifactWindows = 0;
+  let abstainWindows = 0;
   let totalWindows = 0;
 
   for (let cIdx = 0; cIdx < numChunks; cIdx++) {
@@ -821,7 +842,7 @@ export async function runEdgeScreeningOnRecording(
 
     if (!chunks || chunks.length === 0) continue;
 
-    // Assemble & filter each channel for this chunk
+    // Assemble, unit-normalize, resample, and bandpass-filter each channel
     const channelArrays: Float64Array[] = [];
     for (let s = 0; s < eegSignals.length; s++) {
       const sigHdr = eegSignals[s];
@@ -830,8 +851,7 @@ export async function runEdgeScreeningOnRecording(
       for (const ch of chunks) {
         const dig = ch?.signals?.[s]?.digital;
         if (dig && dig.length > 0) {
-          let phys = Float64Array.from(toPhysical(sigHdr, dig));
-          // Convert mV to uV if unit is mV
+          const phys = Float64Array.from(toPhysical(sigHdr, dig));
           const unit = String(
             sigHdr.physicalDimension || sigHdr.unit || "uV",
           ).toLowerCase();
@@ -856,7 +876,7 @@ export async function runEdgeScreeningOnRecording(
       channelArrays.push(filterChannel256Hz(resampled));
     }
 
-    // Apply Common Average Reference (CAR) if referential montage
+    // Apply Common Average Reference (CAR) for referential montages
     const nSamples = channelArrays[0]?.length ?? 0;
     const nCh = channelArrays.length;
     if (isReferential && nCh > 2) {
@@ -868,7 +888,7 @@ export async function runEdgeScreeningOnRecording(
       }
     }
 
-    // Initialize calm baseline TKEO on the first chunk
+    // Establish calm baseline TKEO from the median channel energy on the first chunk
     if (baseTKEO === 0 && nSamples >= WIN_SAMPLES) {
       const chTkeoMeans: number[] = [];
       for (let c = 0; c < nCh; c++) {
@@ -883,7 +903,7 @@ export async function runEdgeScreeningOnRecording(
       baseTKEO = (chTkeoMeans[Math.floor(chTkeoMeans.length / 2)] ?? 1) + 1e-6;
     }
 
-    // Step in 2-second windows across the chunk
+    // Step across non-overlapping 2-second (512-sample) windows
     const numWinsInChunk = Math.floor(nSamples / WIN_SAMPLES);
     for (let w = 0; w < numWinsInChunk; w++) {
       totalWindows++;
@@ -909,7 +929,7 @@ export async function runEdgeScreeningOnRecording(
       const winStartSec = chunkStart + w * WIN_SEC;
       const winEndSec = winStartSec + WIN_SEC;
 
-      // Top 3 most active channels in this window
+      // Top 3 highest-energy channels for cortical mapping
       const rankedChannels = eegLabels
         .map((lbl, idx) => ({
           lbl,
@@ -919,12 +939,32 @@ export async function runEdgeScreeningOnRecording(
         .slice(0, 3)
         .map((item) => item.lbl);
 
-      const blinkRatio = features28[26];
-      const recruitPct = features28[25];
       const maxRms = features28[1];
+      const meanRms = features28[13];
       const focalCrest = features28[24];
+      const recruitPct = features28[25];
+      const blinkRatio = features28[26];
 
-      if (trailingMean >= threshold) {
+      // 1. Explicit Abstention Gate: flatline/disconnected leads, severe saturation,
+      // or ambiguous borderline scores corrupted by heavy ocular/EMG interference.
+      const isFlatline = maxRms < 1.5 || meanRms < 0.8;
+      const isSaturated = maxRms > 450 && blinkRatio > 2.6;
+      const isAmbiguousNoisy =
+        trailingMean >= threshold - 0.08 &&
+        trailingMean < threshold &&
+        blinkRatio >= 2.8;
+
+      if (isFlatline || isSaturated || isAmbiguousNoisy) {
+        abstainWindows++;
+        windowDetections.push({
+          startSec: winStartSec,
+          endSec: winEndSec,
+          type: "abstain_unreliable",
+          confidence: 0,
+          channels: rankedChannels.slice(0, 3),
+        });
+      } else if (trailingMean >= threshold) {
+        // 2. Sustained seizure candidate above operating threshold
         windowDetections.push({
           startSec: winStartSec,
           endSec: winEndSec,
@@ -936,6 +976,7 @@ export async function runEdgeScreeningOnRecording(
         blinkRatio >= 3.2 ||
         (maxRms > 120 && recruitPct < 0.2 && seizureProb < 0.35)
       ) {
+        // 3. Ocular blink or isolated high-amplitude muscle artifact
         artifactWindows++;
         windowDetections.push({
           startSec: winStartSec,
@@ -948,6 +989,7 @@ export async function runEdgeScreeningOnRecording(
         seizureProb >= 0.42 ||
         (focalCrest > 1.85 && recruitPct >= 0.25 && blinkRatio < 2.8)
       ) {
+        // 4. Brief focal interictal epileptiform discharge (IED) candidate
         windowDetections.push({
           startSec: winStartSec,
           endSec: winEndSec,
@@ -960,11 +1002,11 @@ export async function runEdgeScreeningOnRecording(
 
     const pct = Math.min(95, Math.round(((cIdx + 1) / numChunks) * 90) + 5);
     onProgress?.(pct);
-    // Yield to browser main thread so UI stays responsive
+    // Yield to browser event loop so UI remains responsive
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
-  // Merge adjacent/nearby windows of the same type into clean clinical events
+  // Merge adjacent/nearby windows of identical event type into contiguous intervals
   const mergedEvents: RawDetection[] = [];
   for (const det of windowDetections) {
     const prev = mergedEvents[mergedEvents.length - 1];
@@ -978,7 +1020,7 @@ export async function runEdgeScreeningOnRecording(
     }
   }
 
-  // Rank and cap events so the timeline stays focused on the highest-confidence events
+  // Retain highest-priority intervals per category for focused clinical review
   const seizures = mergedEvents
     .filter((e) => e.type === "seizure_candidate")
     .sort((a, b) => b.confidence - a.confidence)
@@ -987,12 +1029,16 @@ export async function runEdgeScreeningOnRecording(
     .filter((e) => e.type === "ied_candidate")
     .sort((a, b) => b.confidence - a.confidence)
     .slice(0, 8);
+  const abstains = mergedEvents
+    .filter((e) => e.type === "abstain_unreliable")
+    .sort((a, b) => b.endSec - b.startSec - (a.endSec - a.startSec))
+    .slice(0, 5);
   const artifacts = mergedEvents
     .filter((e) => e.type === "artifact")
     .sort((a, b) => b.confidence - a.confidence)
     .slice(0, 5);
 
-  const finalDetections = [...seizures, ...ieds, ...artifacts].sort(
+  const finalDetections = [...seizures, ...ieds, ...abstains, ...artifacts].sort(
     (a, b) => a.startSec - b.startSec,
   );
 
@@ -1008,24 +1054,28 @@ export async function runEdgeScreeningOnRecording(
     created_at: new Date(),
   }));
 
+  // Account for both artifact and abstained windows in overall signal quality
+  const corruptedRatio =
+    (artifactWindows + abstainWindows) / Math.max(1, totalWindows);
   const qualityScore = Math.max(
-    60,
-    Math.min(
-      99,
-      Math.round((1 - artifactWindows / Math.max(1, totalWindows)) * 100),
-    ),
+    15,
+    Math.min(99, Math.round((1 - corruptedRatio) * 100)),
   );
   const qualityStatus =
     qualityScore >= 85
       ? "good"
-      : qualityScore >= 70
+      : qualityScore >= 65
         ? "review_required"
         : "poor";
 
   const overallResult =
-    seizures.length > 0 || ieds.length > 0
-      ? "Candidate epileptiform activity detected"
-      : "No epileptiform candidates above threshold";
+    corruptedRatio > 0.4
+      ? "Inconclusive — poor signal quality (manual review required)"
+      : seizures.length > 0 || ieds.length > 0
+        ? "Candidate epileptiform activity flagged for review"
+        : abstains.length > 0
+          ? "Abstained on unreliable segments — manual check advised"
+          : "No epileptiform candidates above operating threshold";
 
   const completedSession: ScreeningSession = {
     ...session,
@@ -1040,7 +1090,7 @@ export async function runEdgeScreeningOnRecording(
     "rw",
     [db.recordings, db.screening_sessions, db.detected_events],
     async () => {
-      // Remove older session events for this recording to avoid duplicates
+      // Remove previous screening sessions for this recording to avoid duplicate markers
       const oldSessions = await db.screening_sessions
         .where("recording_id")
         .equals(recording.id)
@@ -1060,7 +1110,7 @@ export async function runEdgeScreeningOnRecording(
         duration: totalSec,
         quality_status: qualityStatus,
         screening_status:
-          seizures.length > 0 || ieds.length > 0
+          seizures.length > 0 || ieds.length > 0 || abstains.length > 0
             ? "review_pending"
             : "screened",
       });
