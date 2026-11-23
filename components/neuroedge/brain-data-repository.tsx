@@ -54,13 +54,14 @@ function Stat({
 
 export function BrainDataRepository() {
   const liveData = useLiveQuery(async () => {
-    const [recordings, sessions, events, syncQueue, lastSyncSetting] = await Promise.all([
-      db.recordings.toArray(),
-      db.screening_sessions.toArray(),
-      db.detected_events.toArray(),
-      db.sync_queue.toArray(),
-      db.app_settings.get("last_sync_attempt"),
-    ]);
+    const [recordings, sessions, events, syncQueue, lastSyncSetting] =
+      await Promise.all([
+        db.recordings.toArray(),
+        db.screening_sessions.toArray(),
+        db.detected_events.toArray(),
+        db.sync_queue.toArray(),
+        db.app_settings.get("last_sync_attempt"),
+      ]);
 
     const records = recordings.map((recording) => {
       const recordingSessions = sessions
@@ -87,15 +88,23 @@ export function BrainDataRepository() {
       } else if (queueItem?.status === "failed") {
         sync = "Failed";
       } else if (!queueItem) {
-        sync = recording.screening_status === "imported" ? "Pending" : "Synchronized";
+        sync =
+          recording.screening_status === "imported"
+            ? "Pending"
+            : "Synchronized";
       }
 
       let output = "Not processed";
-      if (latestSession?.status === "processing" || latestSession?.status === "pending") {
+      if (
+        latestSession?.status === "processing" ||
+        latestSession?.status === "pending"
+      ) {
         output = "Awaiting screening";
       } else if (latestSession?.status === "failed") {
         output = "Screening failed";
-      } else if (sessionEvents.some((event) => event.event_type === "ied_candidate")) {
+      } else if (
+        sessionEvents.some((event) => event.event_type === "ied_candidate")
+      ) {
         output = "Candidate IEDs";
       } else if (latestSession?.status === "completed") {
         output = "No candidate";
@@ -125,26 +134,34 @@ export function BrainDataRepository() {
     const pendingSync = syncQueue.filter(
       (item) => item.status === "pending" || item.status === "syncing",
     ).length;
-    const failedSync = syncQueue.filter((item) => item.status === "failed").length;
-    const synchronized = syncQueue.filter((item) => item.status === "synced").length;
+    const failedSync = syncQueue.filter(
+      (item) => item.status === "failed",
+    ).length;
+    const synchronized = syncQueue.filter(
+      (item) => item.status === "synced",
+    ).length;
 
     return {
       records,
-      structuredCount: sessions.filter((session) => session.status === "completed").length,
+      structuredCount: sessions.filter(
+        (session) => session.status === "completed",
+      ).length,
       pendingSync,
       failedSync,
       synchronized,
-      lastSyncAttempt: typeof lastSyncSetting?.value === "string"
-        ? lastSyncSetting.value
-        : null,
+      lastSyncAttempt:
+        typeof lastSyncSetting?.value === "string"
+          ? lastSyncSetting.value
+          : null,
     };
   }, []);
 
-  const records = liveData?.records ?? [];
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("All records");
   const [sortAsc, setSortAsc] = useState(false);
   const [page, setPage] = useState(1);
+
+  const records = liveData?.records ?? [];
 
   const syncQueue = async () => {
     await db.app_settings.put({
@@ -172,7 +189,7 @@ export function BrainDataRepository() {
         .sort((a, b) =>
           sortAsc ? a.id.localeCompare(b.id) : b.id.localeCompare(a.id),
         ),
-    [filter, query, sortAsc],
+    [filter, query, sortAsc, liveData],
   );
   const exportData = () => {
     const blob = new Blob(
@@ -208,13 +225,27 @@ export function BrainDataRepository() {
             never included in this repository export.
           </p>
         </div>
-       
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat value={String(records.length)} label="Total recordings stored locally" />
-        <Stat value={String(liveData?.structuredCount ?? 0)} label="Structured records generated" tone="green" />
-        <Stat value={String(liveData?.pendingSync ?? 0)} label="Pending synchronization" tone="amber" />
-        <Stat value={String(liveData?.synchronized ?? 0)} label="Successfully synchronized" tone="green" />
+        <Stat
+          value={String(records.length)}
+          label="Total recordings stored locally"
+        />
+        <Stat
+          value={String(liveData?.structuredCount ?? 0)}
+          label="Structured records generated"
+          tone="green"
+        />
+        <Stat
+          value={String(liveData?.pendingSync ?? 0)}
+          label="Pending synchronization"
+          tone="amber"
+        />
+        <Stat
+          value={String(liveData?.synchronized ?? 0)}
+          label="Successfully synchronized"
+          tone="green"
+        />
       </div>
       <div className="grid gap-5 xl:grid-cols-[1fr_300px]">
         <Panel
@@ -394,25 +425,34 @@ export function BrainDataRepository() {
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-lg bg-ne-bg2 p-3">
-                  <p className="font-mono text-lg text-ne-fg">{records.length}</p>
+                  <p className="font-mono text-lg text-ne-fg">
+                    {records.length}
+                  </p>
                   <p className="text-ne-fg-3">Local records</p>
                 </div>
                 <div className="rounded-lg bg-ne-bg2 p-3">
-                  <p className="font-mono text-lg text-ne-amber">{liveData?.pendingSync ?? 0}</p>
+                  <p className="font-mono text-lg text-ne-amber">
+                    {liveData?.pendingSync ?? 0}
+                  </p>
                   <p className="text-ne-fg-3">Pending uploads</p>
                 </div>
                 <div className="rounded-lg bg-ne-bg2 p-3">
-                  <p className="font-mono text-lg text-ne-emerald">{liveData?.synchronized ?? 0}</p>
+                  <p className="font-mono text-lg text-ne-emerald">
+                    {liveData?.synchronized ?? 0}
+                  </p>
                   <p className="text-ne-fg-3">Successful</p>
                 </div>
                 <div className="rounded-lg bg-ne-bg2 p-3">
-                  <p className="font-mono text-lg text-ne-critical">{liveData?.failedSync ?? 0}</p>
+                  <p className="font-mono text-lg text-ne-critical">
+                    {liveData?.failedSync ?? 0}
+                  </p>
                   <p className="text-ne-fg-3">Failed</p>
                 </div>
               </div>
               <p className="flex items-center gap-2 text-ne-fg-3">
                 <RefreshCw className="h-3 w-3" />
-                Last sync attempt: {liveData?.lastSyncAttempt
+                Last sync attempt:{" "}
+                {liveData?.lastSyncAttempt
                   ? new Date(liveData.lastSyncAttempt).toLocaleString()
                   : "Never"}
               </p>
