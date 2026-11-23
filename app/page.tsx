@@ -21,6 +21,7 @@ import { Panel } from "@/components/layout/panel";
 import { db } from "@/lib/storage/db";
 import { useWorkstationPolicy } from "@/lib/privacy/workstation-policy";
 
+
 function dailyBuckets(values: Date[], days = 7) {
   const end = new Date();
   end.setHours(23, 59, 59, 999);
