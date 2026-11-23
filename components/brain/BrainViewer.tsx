@@ -12,7 +12,7 @@ import {
   type MutableRefObject,
 } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ExternalLink } from "lucide-react";
+import { ChevronDown, ExternalLink, X } from "lucide-react";
 import { db } from "@/lib/storage/db";
 import {
   getElectrodeEducation,
@@ -146,14 +146,6 @@ function useSimulatedSignal(
   return events;
 }
 
-const fmtClock = (s: number) => {
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = Math.floor(s % 60);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(h)}:${p(m)}:${p(sec)}`;
-};
-
 const fmtMs = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(
     Math.floor(s % 60),
@@ -172,7 +164,6 @@ export default function BrainViewer({
   events: eventsProp,
   channelActivity,
   status = "recording",
-  recordingStartedAt,
   simulate,
   defaultMode = "overview",
   quality = "low",
@@ -289,7 +280,6 @@ export default function BrainViewer({
     if (!hasDbRecording || !dbState) return;
     const base = { ...dbState.baseActivity };
 
-    // Incorporate live channel RMS into cortical node glow
     for (const [elId, traceInfo] of Object.entries(nodeTraces)) {
       const normRms = Math.min(0.95, Math.max(0.18, traceInfo.rmsUv / 85));
       base[elId] = Math.max(base[elId] ?? 0.16, normRms);
@@ -326,19 +316,7 @@ export default function BrainViewer({
   const events =
     eventsProp ?? (hasDbScreening ? dbState!.brainEvents : simEvents);
 
-  const startedAt = useRef(recordingStartedAt ?? Date.now());
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    if (recordingStartedAt) startedAt.current = recordingStartedAt;
-  }, [recordingStartedAt]);
-  useEffect(() => {
-    if (status !== "recording") return;
-    const tick = () => setElapsed((Date.now() - startedAt.current) / 1000);
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [status]);
-
+  // Clicking the already-selected item toggles it back to null (collapses inline detail)
   const choose = useCallback(
     (next: Selection) => {
       setSelection((prev) => {
@@ -360,18 +338,25 @@ export default function BrainViewer({
     });
   };
 
-  const activeEvent =
-    selection?.kind === "event"
-      ? events.find((e) => e.id === selection.id)
-      : undefined;
-  const selectedElectrode =
+  const openWorkspaceAt = useCallback(
+    (startSec: number) => {
+      if (dbState?.recording?.id) {
+        router.push(
+          `/workspace?recording=${dbState.recording.id}&start=${Math.floor(
+            startSec,
+          )}`,
+        );
+      } else {
+        router.push("/workspace");
+      }
+    },
+    [dbState?.recording?.id, router],
+  );
+
+  const directElectrodeSelection =
     selection?.kind === "electrode"
       ? electrodes.find((e) => e.id === selection.id)
-      : activeEvent
-        ? electrodes.find((e) => e.id === activeEvent.channel)
-        : undefined;
-  const selectedRegionKey =
-    selection?.kind === "region" ? selection.key : undefined;
+      : undefined;
 
   const topChannels = useMemo(
     () =>
@@ -403,23 +388,6 @@ export default function BrainViewer({
           exposure={glow}
         />
 
-        {/* <RecordingPill
-          status={status}
-          label={
-            hasDbRecording
-              ? dbState!.recording.recording_name
-              : status === "recording"
-                ? "Active"
-                : "Standby"
-          }
-          elapsed={hasDbRecording ? dbState!.recording.duration : elapsed}
-          channels={
-            hasDbRecording
-              ? dbState!.recording.channel_count
-              : electrodes.length
-          }
-        /> */}
-
         <div className={styles.modes} role="group" aria-label="View mode">
           {MODES.map((m) => (
             <button
@@ -443,32 +411,30 @@ export default function BrainViewer({
               <InfoHelp title="3D Cortical & Tract Model">
                 <p>
                   Interactive 3D anatomical view of the cerebral lobes,
-                  cerebellum, and white-matter pathways (corpus callosum,
-                  arcuate, and projection tracts).
+                  cerebellum, and white-matter pathways.
                 </p>
                 <p>
-                  Select any lobe below to highlight its territory on both
-                  hemispheres and inspect its EEG clinical role.
+                  Click any lobe to highlight its territory on both hemispheres
+                  and expand its EEG guide underneath.
                 </p>
               </InfoHelp>
             </div>
             <p className={styles.sub}>
-              Select a lobe to inspect its functional role and mapped 10-20
-              electrodes.
+              Click a lobe to inspect its role and mapped 10-20 electrodes.
             </p>
             <ul className={styles.list}>
               {REGIONS.map((r) => {
                 const on =
                   selection?.kind === "region" && selection.key === r.key;
+                const regionKey = r.key as RegionKey;
                 return (
                   <li key={r.key}>
                     <button
                       type="button"
                       className={styles.row}
+                      aria-expanded={on}
                       aria-pressed={on}
-                      onClick={() =>
-                        choose({ kind: "region", key: r.key as RegionKey })
-                      }
+                      onClick={() => choose({ kind: "region", key: regionKey })}
                     >
                       <span
                         className={styles.dot}
@@ -478,29 +444,34 @@ export default function BrainViewer({
                         <strong>{r.label}</strong>
                         <span>{r.summary}</span>
                       </span>
+                      <ChevronDown
+                        className={`mt-0.5 h-4 w-4 shrink-0 text-ne-fg-3 transition-transform duration-200 ${
+                          on ? "rotate-180 text-ne-cyan" : ""
+                        }`}
+                        aria-hidden="true"
+                      />
                     </button>
+
+                    {/* Inline expandable EEG guide directly underneath the clicked lobe */}
+                    {on && (
+                      <div className={`${styles.locIllustrative} mb-1 mt-2`}>
+                        <span className={styles.badge}>
+                          {r.label} EEG Guide
+                        </span>
+                        <strong>
+                          Electrodes: {REGION_EDUCATION[regionKey].keyElectrodes}
+                        </strong>
+                        <p>{REGION_EDUCATION[regionKey].eegRole}</p>
+                        <p>
+                          <strong>Seizure semiology:</strong>{" "}
+                          {REGION_EDUCATION[regionKey].seizureSemiology}
+                        </p>
+                      </div>
+                    )}
                   </li>
                 );
               })}
             </ul>
-
-            {selectedRegionKey && (
-              <div className={styles.locIllustrative} style={{ marginTop: 12 }}>
-                <span className={styles.badge}>
-                  {REGIONS.find((r) => r.key === selectedRegionKey)?.label} EEG
-                  Guide
-                </span>
-                <strong>
-                  Electrodes:{" "}
-                  {REGION_EDUCATION[selectedRegionKey].keyElectrodes}
-                </strong>
-                <p>{REGION_EDUCATION[selectedRegionKey].eegRole}</p>
-                <p>
-                  <strong>Seizure semiology:</strong>{" "}
-                  {REGION_EDUCATION[selectedRegionKey].seizureSemiology}
-                </p>
-              </div>
-            )}
           </>
         )}
 
@@ -517,9 +488,9 @@ export default function BrainViewer({
                   (Occipital).
                 </p>
                 <p>
-                  <strong>Odd numbers</strong> (1, 3, 5, 7) sit on the{" "}
+                  <strong>Odd numbers</strong> sit on the{" "}
                   <strong>Left hemisphere</strong>;{" "}
-                  <strong>Even numbers</strong> (2, 4, 6, 8) sit on the{" "}
+                  <strong>Even numbers</strong> sit on the{" "}
                   <strong>Right hemisphere</strong>; <strong>z</strong> marks
                   the midline.
                 </p>
@@ -527,7 +498,7 @@ export default function BrainViewer({
             </div>
             <p className={styles.sub}>
               Click any node on the 3D head or grid to inspect its live EDF
-              channel waveform and clinical guide.
+              channel waveform.
             </p>
             <div className={styles.chips}>
               {electrodes.map((el) => {
@@ -537,7 +508,7 @@ export default function BrainViewer({
                     key={el.id}
                     type="button"
                     className={styles.chip}
-                    aria-pressed={selectedElectrode?.id === el.id}
+                    aria-pressed={directElectrodeSelection?.id === el.id}
                     onClick={() => choose({ kind: "electrode", id: el.id })}
                   >
                     <span
@@ -552,22 +523,13 @@ export default function BrainViewer({
                 );
               })}
             </div>
-            {selectedElectrode ? (
+            {directElectrodeSelection ? (
               <ElectrodeDetail
-                electrode={selectedElectrode}
-                trace={nodeTraces[selectedElectrode.id]}
+                electrode={directElectrodeSelection}
+                trace={nodeTraces[directElectrodeSelection.id]}
                 recordingId={dbState?.recording?.id}
-                onOpenWorkspace={(startSec) => {
-                  if (dbState?.recording?.id) {
-                    router.push(
-                      `/workspace?recording=${dbState.recording.id}&start=${Math.floor(
-                        startSec,
-                      )}`,
-                    );
-                  } else {
-                    router.push("/workspace");
-                  }
-                }}
+                onOpenWorkspace={openWorkspaceAt}
+                onClose={() => choose(null)}
               />
             ) : (
               <p className={styles.empty}>
@@ -591,8 +553,8 @@ export default function BrainViewer({
                     Entropy).
                   </p>
                   <p>
-                    Click any event to rotate the 3D cortex to the active
-                    channel and inspect its waveform segment.
+                    Click any event to expand its waveform graph directly
+                    underneath. Click again to collapse.
                   </p>
                 </InfoHelp>
               </div>
@@ -606,9 +568,23 @@ export default function BrainViewer({
               )}
             </div>
             <p className={styles.sub}>
-              Select an event to focus the 3D cortex on its onset channel and
-              inspect the trace.
+              Click an event to expand its waveform trace and focus the 3D
+              cortex. Click again to collapse.
             </p>
+
+            {/* Shown at the top only if a user clicks an electrode directly on the 3D head */}
+            {directElectrodeSelection && (
+              <div className="mb-3">
+                <ElectrodeDetail
+                  electrode={directElectrodeSelection}
+                  trace={nodeTraces[directElectrodeSelection.id]}
+                  recordingId={dbState?.recording?.id}
+                  onOpenWorkspace={openWorkspaceAt}
+                  onClose={() => choose(null)}
+                />
+              </div>
+            )}
+
             {events.length === 0 ? (
               <p className={styles.empty}>No events flagged in this session.</p>
             ) : (
@@ -622,6 +598,7 @@ export default function BrainViewer({
                       <button
                         type="button"
                         className={`${styles.row} ${styles.evRow}`}
+                        aria-expanded={on}
                         aria-pressed={on}
                         onClick={() => choose({ kind: "event", id: ev.id })}
                       >
@@ -638,34 +615,33 @@ export default function BrainViewer({
                           </strong>
                         </span>
                         <span className={styles.data}>{ev.amplitudeUv} µV</span>
+                        <ChevronDown
+                          className={`h-3.5 w-3.5 shrink-0 text-ne-fg-3 transition-transform duration-200 ${
+                            on ? "rotate-180 text-ne-cyan" : ""
+                          }`}
+                          aria-hidden="true"
+                        />
                       </button>
+
+                      {/* Inline waveform graph & guide directly under the clicked signal */}
+                      {on && el && (
+                        <div className="mb-2 mt-2 pl-1">
+                          <ElectrodeDetail
+                            electrode={el}
+                            event={ev}
+                            trace={nodeTraces[el.id]}
+                            recordingId={dbState?.recording?.id}
+                            onOpenWorkspace={openWorkspaceAt}
+                          />
+                        </div>
+                      )}
                     </li>
                   );
                 })}
               </ul>
             )}
 
-            {selectedElectrode && (
-              <ElectrodeDetail
-                electrode={selectedElectrode}
-                event={activeEvent}
-                trace={nodeTraces[selectedElectrode.id]}
-                recordingId={dbState?.recording?.id}
-                onOpenWorkspace={(startSec) => {
-                  if (dbState?.recording?.id) {
-                    router.push(
-                      `/workspace?recording=${dbState.recording.id}&start=${Math.floor(
-                        startSec,
-                      )}`,
-                    );
-                  } else {
-                    router.push("/workspace");
-                  }
-                }}
-              />
-            )}
-
-            {!selectedElectrode && topChannels.length > 0 && (
+            {!selection && topChannels.length > 0 && (
               <p className={styles.fine}>
                 Peak active nodes: {topChannels.map((c) => c.label).join(", ")}.
               </p>
@@ -677,42 +653,20 @@ export default function BrainViewer({
   );
 }
 
-function RecordingPill({
-  status,
-  label,
-  elapsed,
-  channels,
-}: {
-  status: RecordingStatus;
-  label: string;
-  elapsed: number;
-  channels: number;
-}) {
-  return (
-    <div className={`${styles.rec} ${styles[`rec_${status}`]}`} role="status">
-      <span className={styles.recDot} aria-hidden="true" />
-      <span className="max-w-[140px] truncate font-medium">{label}</span>
-      {status !== "standby" && (
-        <span className={styles.data}>{fmtClock(elapsed)}</span>
-      )}
-      <span className={styles.recSep} aria-hidden="true" />
-      <span className={styles.data}>{channels} ch</span>
-    </div>
-  );
-}
-
 function ElectrodeDetail({
   electrode,
   event,
   trace,
   recordingId,
   onOpenWorkspace,
+  onClose,
 }: {
   electrode: Electrode;
   event?: DetectedEvent;
   trace?: { values: number[]; edfLabel: string; rmsUv: number };
   recordingId?: string;
   onOpenWorkspace?: (startSec: number) => void;
+  onClose?: () => void;
 }) {
   const hemi =
     electrode.hemisphere === "midline"
@@ -733,15 +687,27 @@ function ElectrodeDetail({
   }, [trace, electrode.id]);
 
   return (
-    <div className={styles.detail}>
+    <div className={styles.detail} style={{ marginTop: 0 }}>
       <h3 className={styles.detailTitle}>
         <span>
-          <strong className="font-mono text-base text-ne-fg">
+          <strong className="font-mono text-sm text-ne-fg">
             {electrode.label}
           </strong>{" "}
           · {electrode.regionLabel}
         </span>
-        <span>{hemi}</span>
+        <span className="inline-flex items-center gap-2">
+          <span>{hemi}</span>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close channel details"
+              className="rounded p-0.5 text-ne-fg-3 hover:text-ne-fg"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </span>
       </h3>
 
       {event && (
@@ -785,7 +751,6 @@ function ElectrodeDetail({
 
       {/* Educational Neurophysiology Guide for this Node */}
       <div className={styles.locIllustrative}>
-        <span className={styles.badge}>Clinical & DSP Guide</span>
         <p>
           <strong>Anatomical placement:</strong> {edu.role}
         </p>

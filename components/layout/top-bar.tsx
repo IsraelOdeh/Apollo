@@ -3,13 +3,16 @@
 
 import Link from "next/link";
 import {
-  Bell,
+  BookOpen,
+  Check,
+  ChevronDown,
+  Cpu,
+  Lock,
   Menu,
   Moon,
-  Search,
   Settings as SettingsIcon,
+  Stethoscope,
   Sun,
-  Cpu,
   Wifi,
   WifiOff,
 } from "lucide-react";
@@ -21,10 +24,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { DEMO_SYSTEM_STATUS } from "@/lib/demo/system-status";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "./nav-items";
 import { useThemeMode } from "./neuroedge-logo";
+import { useWorkstationPolicy } from "@/lib/privacy/workstation-policy";
 
 type TopBarProps = {
   item: NavItem;
@@ -55,19 +58,6 @@ export function TopBar({ item, online, onOpenNavigation }: TopBarProps) {
         </h1>
       </div>
 
-      {/* <label className="relative hidden w-64 xl:block">
-        <span className="sr-only">Global search</span>
-        <Search
-          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ne-fg-3"
-          aria-hidden="true"
-        />
-        <input
-          type="search"
-          placeholder="Search recordings, events, IDs"
-          className="h-9 w-full rounded-lg border border-ne-line bg-ne-card pl-9 pr-3 text-sm text-ne-fg placeholder:text-ne-fg-3 focus:border-ne-cyan/50 focus:outline-none focus:ring-1 focus:ring-ne-cyan/30"
-        />
-      </label> */}
-
       <ConnectionPill online={online} />
 
       <button
@@ -86,8 +76,7 @@ export function TopBar({ item, online, onOpenNavigation }: TopBarProps) {
         )}
       </button>
 
-      {/* <NotificationsMenu /> */}
-      <UserMenu />
+      <RoleAndAccountMenu />
     </header>
   );
 }
@@ -122,71 +111,88 @@ function ConnectionPill({ online }: { online: boolean }) {
   );
 }
 
-function NotificationsMenu() {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label="Notifications"
-          className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-ne-line text-ne-fg-2 transition-colors hover:bg-ne-hover hover:text-ne-fg"
-        >
-          <Bell className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="w-64 border-ne-line bg-ne-elevated text-ne-fg"
-      >
-        <DropdownMenuLabel className="text-xs uppercase tracking-[0.14em] text-ne-fg-2">
-          Notifications
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator className="bg-ne-line" />
-        <p className="px-2 py-3 text-sm text-ne-fg-2">No new alerts.</p>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
+function RoleAndAccountMenu() {
+  const { policy, updatePolicy } = useWorkstationPolicy();
+  const isEducation = policy.role === "education";
 
-function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="Account menu"
-          className="flex h-9 shrink-0 items-center gap-2 rounded-full border border-ne-line bg-ne-card pl-1 pr-3 text-sm text-ne-fg-2 transition-colors hover:bg-ne-hover hover:text-ne-fg"
+          aria-label="Switch view mode and account menu"
+          className="flex h-9 shrink-0 items-center gap-2 rounded-full border border-ne-line bg-ne-card pl-1 pr-2.5 text-sm text-ne-fg-2 transition-colors hover:bg-ne-hover hover:text-ne-fg"
         >
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ne-elevated font-mono text-[11px] text-ne-fg">
-            NE
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ne-elevated font-mono text-[11px] font-medium text-ne-fg">
+            {isEducation ? "ED" : "NE"}
           </span>
           <span className="hidden md:inline">
-            {DEMO_SYSTEM_STATUS.operatorName}
+            {isEducation ? "Education View" : policy.reviewerName}
           </span>
+          <ChevronDown className="h-3.5 w-3.5 text-ne-fg-3" aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
+
       <DropdownMenuContent
         align="end"
-        className="w-56 border-ne-line bg-ne-elevated text-ne-fg"
+        className="w-60 border-ne-line bg-ne-elevated text-ne-fg"
       >
         <DropdownMenuLabel>
-          <p className="text-sm font-medium">
-            {DEMO_SYSTEM_STATUS.operatorName}
-          </p>
-          <p className="text-xs font-normal text-ne-fg-3">
-            {DEMO_SYSTEM_STATUS.workstationLabel}
+          <p className="text-sm font-medium">{policy.reviewerName}</p>
+          <p className="mt-0.5 flex items-center gap-1.5 text-xs font-normal text-ne-fg-3">
+            {policy.localOnlyMode && (
+              <Lock className="h-3 w-3 text-ne-cyan" aria-hidden="true" />
+            )}
+            <span>
+              {policy.localOnlyMode ? "Local-only workstation" : "Workstation"}
+            </span>
           </p>
         </DropdownMenuLabel>
+
         <DropdownMenuSeparator className="bg-ne-line" />
+
+        <DropdownMenuLabel className="py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-ne-fg-3">
+          View Mode
+        </DropdownMenuLabel>
+
+        <DropdownMenuItem
+          onClick={() => updatePolicy({ role: "clinician" })}
+          className="cursor-pointer justify-between focus:bg-ne-hover focus:text-ne-fg"
+        >
+          <span className="flex items-center gap-2">
+            <Stethoscope className="h-4 w-4 text-ne-emerald" aria-hidden="true" />
+            <span>Clinical / Research</span>
+          </span>
+          {!isEducation && (
+            <Check className="h-3.5 w-3.5 text-ne-emerald" aria-hidden="true" />
+          )}
+        </DropdownMenuItem>
+
+        <DropdownMenuItem
+          onClick={() => updatePolicy({ role: "education" })}
+          className="cursor-pointer justify-between focus:bg-ne-hover focus:text-ne-fg"
+        >
+          <span className="flex items-center gap-2">
+            <BookOpen className="h-4 w-4 text-ne-cyan" aria-hidden="true" />
+            <span>Education / Civilian</span>
+          </span>
+          {isEducation && (
+            <Check className="h-3.5 w-3.5 text-ne-cyan" aria-hidden="true" />
+          )}
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator className="bg-ne-line" />
+
         <DropdownMenuItem
           asChild
           className="cursor-pointer focus:bg-ne-hover focus:text-ne-fg"
         >
           <Link href="/settings">
             <SettingsIcon className="mr-2 h-4 w-4" aria-hidden="true" />
-            Settings
+            Settings &amp; Privacy
           </Link>
         </DropdownMenuItem>
+
         <DropdownMenuItem
           asChild
           className="cursor-pointer focus:bg-ne-hover focus:text-ne-fg"

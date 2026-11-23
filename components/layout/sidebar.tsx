@@ -4,11 +4,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BookOpen,
   ChevronLeft,
   ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
   Radio,
+  Stethoscope,
   Wifi,
   WifiOff,
   type LucideIcon,
@@ -17,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { DEMO_SYSTEM_STATUS } from "@/lib/demo/system-status";
 import { PRIMARY_NAV, SECONDARY_NAV, type NavItem } from "./nav-items";
 import { NeuroEdgeWordmark } from "./neuroedge-logo";
+import { useWorkstationPolicy } from "@/lib/privacy/workstation-policy";
 
 type SidebarProps = {
   collapsed: boolean;
@@ -32,6 +35,13 @@ export function Sidebar({
   onToggleCollapsed,
 }: SidebarProps) {
   const pathname = usePathname();
+  const { policy } = useWorkstationPolicy();
+  const isEducation = policy.role === "education";
+
+  // In Education mode, hide raw clinical workspace, recording queues, and report tables
+  const visiblePrimaryNav = isEducation
+    ? PRIMARY_NAV.filter((item) => item.href === "/")
+    : PRIMARY_NAV;
 
   return (
     <aside
@@ -40,14 +50,14 @@ export function Sidebar({
       className={cn(
         "fixed inset-y-0 left-0 z-50 flex flex-col border-r border-ne-line bg-ne-bg2/95 backdrop-blur-xl transition-[transform,width] duration-300 ease-out",
         mobileOpen ? "translate-x-0" : "-translate-x-full",
-        "lg:translate-x-0"
+        "lg:translate-x-0",
       )}
     >
       {/* Top Header with Logo + Quick Collapse Toggle */}
       <div
         className={cn(
           "relative flex h-16 shrink-0 items-center border-b border-ne-line",
-          collapsed ? "justify-center px-2" : "justify-between px-4"
+          collapsed ? "justify-center px-2" : "justify-between px-4",
         )}
       >
         <Link
@@ -65,7 +75,7 @@ export function Sidebar({
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           className={cn(
             "flex h-7 w-7 items-center justify-center rounded-lg border border-ne-line bg-ne-card text-ne-fg-2 shadow-sm transition-colors hover:border-ne-cyan hover:text-ne-fg",
-            collapsed && "absolute -right-3.5 top-5 z-50 rounded-full"
+            collapsed && "absolute -right-3.5 top-5 z-50 rounded-full",
           )}
         >
           {collapsed ? (
@@ -79,8 +89,8 @@ export function Sidebar({
       {/* Navigation Links (scrollbar hidden so no gray strip appears) */}
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <NavGroup
-          label="Workspace"
-          items={PRIMARY_NAV}
+          label={isEducation ? "Learning" : "Clinical Workspace"}
+          items={visiblePrimaryNav}
           pathname={pathname}
           collapsed={collapsed}
         />
@@ -92,8 +102,14 @@ export function Sidebar({
         />
       </nav>
 
-      {/* Footer Status & Collapse Button */}
+      {/* Footer Role, Connection Status & Collapse Button */}
       <div className="shrink-0 space-y-2 border-t border-ne-line p-3">
+        <StatusRow
+          icon={isEducation ? BookOpen : Stethoscope}
+          label={isEducation ? "Education view" : "Clinical view"}
+          tone={isEducation ? "info" : "positive"}
+          collapsed={collapsed}
+        />
         <StatusRow
           icon={Radio}
           label={
@@ -117,7 +133,7 @@ export function Sidebar({
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           className={cn(
             "flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-ne-fg-2 transition-colors hover:bg-ne-hover hover:text-ne-fg",
-            collapsed && "justify-center px-0"
+            collapsed && "justify-center px-0",
           )}
         >
           {collapsed ? (
@@ -161,7 +177,7 @@ function NavGroup({ label, items, pathname, collapsed }: NavGroupProps) {
               active
                 ? "bg-ne-elevated text-ne-fg"
                 : "text-ne-fg-2 hover:bg-ne-hover hover:text-ne-fg",
-              collapsed && "justify-center px-0"
+              collapsed && "justify-center px-0",
             )}
           >
             {active && (
@@ -170,7 +186,7 @@ function NavGroup({ label, items, pathname, collapsed }: NavGroupProps) {
             <Icon
               className={cn(
                 "h-4 w-4 shrink-0 transition-colors",
-                active ? "text-ne-emerald" : "group-hover:text-ne-cyan"
+                active ? "text-ne-emerald" : "group-hover:text-ne-cyan",
               )}
               aria-hidden="true"
             />
@@ -185,7 +201,7 @@ function NavGroup({ label, items, pathname, collapsed }: NavGroupProps) {
 type StatusRowProps = {
   icon: LucideIcon;
   label: string;
-  tone: "positive" | "warning" | "neutral";
+  tone: "positive" | "warning" | "neutral" | "info";
   collapsed: boolean;
 };
 
@@ -193,6 +209,7 @@ function StatusRow({ icon: Icon, label, tone, collapsed }: StatusRowProps) {
   const toneClass = {
     positive: "text-ne-emerald",
     warning: "text-ne-amber",
+    info: "text-ne-cyan",
     neutral: "text-ne-fg-3",
   }[tone];
   return (
@@ -200,7 +217,7 @@ function StatusRow({ icon: Icon, label, tone, collapsed }: StatusRowProps) {
       title={collapsed ? label : undefined}
       className={cn(
         "flex items-center gap-3 rounded-xl px-2 py-1.5",
-        collapsed && "justify-center px-0"
+        collapsed && "justify-center px-0",
       )}
     >
       <Icon className={cn("h-4 w-4 shrink-0", toneClass)} aria-hidden="true" />

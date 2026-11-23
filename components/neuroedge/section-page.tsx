@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { ModelInfoPage } from "@/components/neuroedge/model-info-page";
 import {
   Activity,
   ArrowUpRight,
@@ -401,7 +402,7 @@ export function NeuroEdgeSection({ path }: { path: SectionPath }) {
       )}
       {path === "/reports" && <ReportsPage />}
       {path === "/devices" && <DeviceManager />}
-      {path === "/model" && <ModelPanel />}
+      {path === "/model" && <ModelInfoPage />}
       {path === "/settings" && <SettingsPage />}
     </main>
   );
